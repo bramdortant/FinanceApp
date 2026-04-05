@@ -342,6 +342,9 @@ This is the simplest feature — a good first experience with Vue + Inertia.
 - **Edit/delete transactions**
 - **Account balance display**: Each account shows its current balance
   (starting balance + all transactions)
+- **TransactionType enum**: Add a PHP 8.1+ backed enum for the type
+  field (income/expense/transfer) — gives IDE autocompletion and type
+  safety when building transaction forms
 
 **Deliverable**: You can add transactions, make transfers, and see balances.
 
