@@ -314,8 +314,10 @@ Two simple CRUDs — the building blocks everything else depends on.
 
 - **Category list page**: See all categories in a list/grid
 - **Create category**: Form with name and color picker
-- **Edit category**: Change name/color
+- **Edit category**: Change name/color, optional parent category selector
 - **Delete category**: With confirmation (only if no transactions linked)
+- **Loop prevention**: Server-side validation rule (Form Request) to block
+  circular parent chains + UI dropdown filtering to exclude invalid parents
 
 This is the simplest feature — a good first experience with Vue + Inertia.
 
