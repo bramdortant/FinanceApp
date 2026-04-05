@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Account extends Model
 {
-    public $fillable = [
+    protected $fillable = [
         'name',
         'type',
         'starting_balance',

@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CategoryRule extends Model
 {
-    public $fillable = [
+    protected $fillable = [
         'match_pattern',
         'category_id',
     ];

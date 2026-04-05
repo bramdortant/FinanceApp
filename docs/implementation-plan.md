@@ -353,7 +353,13 @@ This is the simplest feature — a good first experience with Vue + Inertia.
   is this CSV for?)
 - **CSV preview**: Show parsed rows before importing (so you can verify)
 - **Column mapping**: Match CSV columns to our fields (date, description,
-  amount) — Dutch bank formats vary, so this step is important
+  amount, counterparty_name, counterparty_iban, balance_after,
+  transaction_code) — Dutch bank formats vary, so this step is important
+- **Rabobank-specific**: Map Naam tegenpartij → counterparty_name,
+  Tegenrekening IBAN → counterparty_iban, Saldo na trn → balance_after,
+  Code → transaction_code. Concatenate Omschrijving 1/2/3 into
+  original_description. Remaining fields stored in original_description
+  as a fallback
 - **Duplicate detection**: Hash each row (date + amount + description) and
   check against existing transactions. Show duplicates with option to
   skip them
@@ -389,7 +395,9 @@ Why this order:
    some dates were intentionally moved)
 4. **Copy categories**: Where a match is found, copy the Monefy category
    to the bank transaction. Create new categories as needed from Monefy's
-   category names
+   category names. Note: some Monefy categories were repurposed (e.g.
+   "Bets" was used to track alcoholic beverages). Include a category
+   mapping step where these can be renamed to their intended meaning
 5. **Review unmatched**: Show a list of:
    - Monefy entries that didn't match any bank transaction (why?)
    - Bank transactions that have no Monefy match (uncategorized — normal
@@ -414,6 +422,9 @@ the new app with categories preserved.
 - **Bulk categorize**: Select multiple transactions → assign same category
 - **Category rules**: "If description contains 'Albert Heijn' → Groceries"
   (saves manual rules for auto-matching on future imports)
+- **Correction tracking**: When a user changes a category, store the
+  correction. These corrections serve double duty: they become local
+  rules immediately, and they feed into AI context in Phase 6
 
 **Deliverable**: Efficiently categorize imported transactions.
 
@@ -425,13 +436,34 @@ the new app with categories preserved.
   suggested categories back
 - **Auto-suggest on import**: After CSV import, automatically suggest
   categories for new transactions
-- **Learning from corrections**: When you change a suggestion, store that
-  as a rule (Phase 5 rules) so the same description gets the right
-  category next time
+- **Interactive learning**: When you manually change a category, this
+  automatically creates a local rule (Phase 5) AND gets stored as
+  correction context for future AI prompts. Over time, the system
+  shifts from AI-heavy to rule-heavy as patterns are learned
 - **Confidence display**: Show how sure the AI is (high confidence =
   auto-assign, low confidence = ask the user)
 
-**Deliverable**: AI suggests categories, learns from your corrections.
+**Privacy & data minimization:**
+
+- **Local rules first**: Rule-based matching handles most transactions
+  without any API call. AI is only used as a fallback for unrecognized
+  transactions
+- **Anonymize before sending**: Personal names in counterparty fields
+  are replaced with placeholders (PERSON) before sending to OpenAI.
+  IBANs are never sent. Only transaction description, amount, and
+  anonymized counterparty name are included
+- **Scenarios requiring anonymization**:
+  - Rent payments (landlord name in counterparty)
+  - Own transfers (user's name between accounts)
+  - Friend payments (payment requests, gifts)
+  - Salary (employer name in counterparty)
+  - Medical payments (doctor/therapist — sensitive category)
+- **API vs consumer**: OpenAI API does not use data for training
+  (unlike ChatGPT). Data is retained up to 30 days for abuse
+  monitoring only
+
+**Deliverable**: AI suggests categories, learns from your corrections,
+while keeping personal data private.
 
 ### Phase 7: Dashboard and Insights
 
@@ -447,6 +479,12 @@ Switchable chart views — same data, different perspectives:
 - **Account balances over time**: Line per account
 - **Income vs expenses**: Monthly balance overview
 - **Time period selector**: Switch between weekly / monthly / yearly views
+- **Recurring expense detector**: Auto-identify subscriptions and recurring
+  payments using transaction codes (ei = direct debit, db = standing order)
+  and counterparty IBAN patterns. Show summary: "You have X recurring
+  expenses totaling €Y/month"
+- **Payment method breakdown**: Using the bank's transaction code field
+  (ba = pin, id = iDEAL, ei = direct debit, cb = bank transfer, etc.)
 
 **Deliverable**: Visual insights into your spending from multiple angles.
 

@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TransactionSplit extends Model
 {
-    public $fillable = [
+    protected $fillable = [
         'transaction_id',
         'category_id',
         'amount',

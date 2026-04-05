@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Transaction extends Model
 {
-    public $fillable = [
+    protected $fillable = [
         'account_id',
         'date',
         'description',
@@ -17,6 +17,10 @@ class Transaction extends Model
         'category_id',
         'type',
         'transfer_to_account_id',
+        'counterparty_name',
+        'counterparty_iban',
+        'balance_after',
+        'transaction_code',
         'notes',
         'csv_import_hash',
         'csv_import_id',
@@ -25,6 +29,7 @@ class Transaction extends Model
     protected $casts = [
         'date' => 'date',
         'amount' => 'decimal:2',
+        'balance_after' => 'decimal:2',
     ];
 
     public function account(): BelongsTo
