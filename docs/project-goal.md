@@ -42,6 +42,8 @@ providing clear insight into spending patterns through categorized transaction d
   - Line chart: running balance or spending trend over time
   - Horizontal bar chart: top spending categories ranked
   - Account balances over time: line per account
+- Recurring expense detector: auto-identify subscriptions and recurring
+  payments using transaction codes (ei/db) and counterparty patterns
 - Budget limits per category with progress bars
 - Monthly/weekly/yearly time period selector
 - Income vs expenses overview
@@ -79,6 +81,8 @@ providing clear insight into spending patterns through categorized transaction d
 - Transaction splitting
 - Sub-categories (hierarchical)
 - Recurring transactions
+- Recurring expense detector (auto-detect from bank data)
+- Payment method breakdown (pin vs iDEAL vs direct debit, using bank codes)
 - Budget limits with progress bars
 
 ### Nice to Have (future)
@@ -89,6 +93,10 @@ providing clear insight into spending patterns through categorized transaction d
 - Multiple bank format presets (ING, ABN AMRO, Rabobank, etc.)
 - Year-over-year comparisons
 - PWA (installable on phone home screen)
+- Top payees ranking (who you spend the most with)
+- Balance forecasting (project end-of-month balance from recurring patterns)
+- Spending velocity (how fast money leaves after salary day)
+- Unusual transaction detection (flag outliers vs category average)
 - Automatic bank sync via GoCardless API (no more manual CSV exports)
   — requires checking current pricing/free tier availability
 
