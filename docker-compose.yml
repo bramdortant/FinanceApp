@@ -1,0 +1,40 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: financeapp-php
+    volumes:
+      - .:/var/www
+    networks:
+      - financeapp
+
+  nginx:
+    image: nginx:alpine
+    container_name: financeapp-nginx
+    ports:
+      - "8000:80"
+    volumes:
+      - .:/var/www
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app
+    networks:
+      - financeapp
+
+  node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: financeapp-node
+    volumes:
+      - .:/var/www
+    ports:
+      - "5173:5173"
+    command: npm run dev -- --host 0.0.0.0
+    networks:
+      - financeapp
+
+networks:
+  financeapp:
+    driver: bridge
