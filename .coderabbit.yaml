@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: "en-US"
+
+tone_instructions: "Senior full-stack engineer reviewing Laravel + Inertia + Vue. Focus on: logic bugs, missing validation/auth, N+1 queries, unsafe migrations, Vue reactivity issues. Ignore wording and style."
+
+early_access: false
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  commit_status: true
+  fail_commit_status: false
+  abort_on_close: true
+  collapse_walkthrough: false
+  changed_files_summary: true
+  sequence_diagrams: false
+  assess_linked_issues: false
+  related_issues: false
+  related_prs: false
+  poem: false
+
+  path_filters:
+    # Backend (Laravel)
+    - "app/**"
+    - "bootstrap/**"
+    - "config/**"
+    - "database/migrations/**"
+    - "database/seeders/**"
+    - "routes/**"
+    # Frontend (Vue + Inertia)
+    - "resources/js/**"
+    - "resources/css/**"
+    - "resources/views/**"
+    # Docker
+    - "Dockerfile"
+    - "docker-compose.yml"
+    - "docker/**"
+    # Exclude
+    - "!storage/**"
+    - "!public/**"
+    - "!vendor/**"
+    - "!node_modules/**"
+    - "!docs/**"
+
+  path_instructions:
+    - path: "app/Http/Controllers/**/*.php"
+      instructions: |
+        Focus on: validation (FormRequest or $request->validate()), authorization,
+        proper Inertia::render() usage, thin controllers, correct data passed to
+        Vue components.
+
+    - path: "app/Models/**/*.php"
+      instructions: |
+        Focus on: safe $fillable/$guarded, proper $casts, correct relationships,
+        N+1 issues, avoid heavy logic in accessors/mutators.
+
+    - path: "database/migrations/**/*.php"
+      instructions: |
+        Focus on: reversible up()/down(), correct column types/nullability/defaults,
+        proper indices and foreign keys. Database is SQLite — flag any
+        MySQL/PostgreSQL-specific syntax.
+
+    - path: "resources/js/**/*.vue"
+      instructions: |
+        Focus on: proper use of Inertia Link and useForm, correct props definition,
+        reactive data handling, no direct DOM manipulation, proper component
+        composition, accessibility basics.
+
+    - path: "resources/js/**/*.js"
+      instructions: |
+        Focus on: proper Inertia router usage, correct imports, no memory leaks
+        in event listeners.
+
+    - path: "routes/**/*.php"
+      instructions: |
+        Focus on: controllers must exist, proper middleware (auth), no heavy logic
+        in closures, consistent naming.
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT REVIEW"
+    labels: []
+    drafts: false
+    base_branches: []
+
+  tools:
+    phpstan:
+      enabled: true
+    markdownlint:
+      enabled: false
+    gitleaks:
+      enabled: true
+    semgrep:
+      enabled: false
+
+chat:
+  auto_reply: true
