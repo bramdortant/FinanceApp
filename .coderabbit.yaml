@@ -100,4 +100,4 @@ reviews:
       enabled: false
 
 chat:
-  auto_reply: false
+  auto_reply: true
