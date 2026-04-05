@@ -319,6 +319,12 @@ Two simple CRUDs — the building blocks everything else depends on.
 
 This is the simplest feature — a good first experience with Vue + Inertia.
 
+**Cleanup from Phase 0:**
+
+- Remove `postcss.config.js` (leftover from Tailwind v3, not needed with v4)
+- Set up Dutch localization (config/app.php locale, date/currency formatting)
+- Add ARIA accessibility attributes when customizing the default layout
+
 **Deliverable**: You can manage your accounts and spending categories.
 
 ### Phase 3: Manual Transaction Entry + Transfers
@@ -492,6 +498,10 @@ Switchable chart views — same data, different perspectives:
   your phone home screen
 - **Basic security**: Rate limiting, CSRF protection (Laravel has this
   by default), auth required
+- **Dockerfile hardening**: Run containers as non-root user (deferred
+  from Phase 0 CodeRabbit review — not needed during local development)
+- **Remove Laravel version info**: Strip version exposure from default
+  pages/headers before going public
 
 **Deliverable**: App is live and accessible from your phone.
 
