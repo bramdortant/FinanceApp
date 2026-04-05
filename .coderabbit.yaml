@@ -2,7 +2,7 @@
 
 language: "en-US"
 
-tone_instructions: "You are a senior full-stack engineer reviewing a Laravel + Inertia.js + Vue.js application. Focus on issues that break after merge: logic bugs, missing validation or auth, bad Eloquent usage, N+1 queries, unsafe migrations, undefined variables or namespaces, Vue reactivity issues, and Inertia misuse. Ignore wording and translation style."
+tone_instructions: "Senior full-stack engineer reviewing Laravel + Inertia + Vue. Focus on: logic bugs, missing validation/auth, N+1 queries, unsafe migrations, Vue reactivity issues. Ignore wording and style."
 
 early_access: false
 

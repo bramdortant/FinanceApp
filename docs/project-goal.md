@@ -60,7 +60,7 @@ providing clear insight into spending patterns through categorized transaction d
 
 ## Feature Priority
 
-### MVP (must have for first usable version)
+### MVP (must-have for first usable version)
 
 - Multiple accounts + transfers
 - Category CRUD

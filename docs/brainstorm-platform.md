@@ -229,7 +229,7 @@ Adding a "Category Management" page:
 2. This gives you a PHP class (with methods like `save()`, `delete()`) and a Blade view
 3. The Blade view uses `wire:click`, `wire:model` to bind actions to the PHP class
 
-No JavaScript build step. No .vue files. No npm (unless you want chart libraries).
+No .vue files. Minimal frontend tooling compared to SPA stacks, but npm/Vite is typically still used for asset builds (Tailwind, CSS).
 
 ### What you see on your phone
 
@@ -277,8 +277,8 @@ No JavaScript build step. No .vue files. No npm (unless you want chart libraries
 **Cost: Free. Permanently (not a trial).**
 
 Oracle Cloud gives you a VM with 1GB RAM and 24GB storage. This IS self-hosting — you
-control the server, install your own software. Oracle does not access your application
-data.
+control the server, install your own software. Your application data remains under your
+account and access controls, while Oracle operates the underlying infrastructure.
 
 Alternative: Raspberry Pi at home (maximum privacy, but networking is complex).
 
