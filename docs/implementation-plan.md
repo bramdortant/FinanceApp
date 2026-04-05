@@ -443,6 +443,17 @@ the new app with categories preserved.
 - **Confidence display**: Show how sure the AI is (high confidence =
   auto-assign, low confidence = ask the user)
 
+**How the AI prompt works (few-shot prompting):**
+
+- System message: generic categorizer role + list of available categories
+- User message: the transaction to categorize (description, amount,
+  anonymized counterparty) + a selection of relevant past corrections
+  as examples (e.g. "Jumbo Supermarkten" → Groceries). This is called
+  few-shot prompting — the AI learns from your examples in the prompt
+- Not ALL corrections are sent every time — only the most relevant ones
+  for the current transaction, keeping prompts focused and API costs low
+- The system prompt stays stable; corrections go in the user message
+
 **Privacy & data minimization:**
 
 - **Local rules first**: Rule-based matching handles most transactions
