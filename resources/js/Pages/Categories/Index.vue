@@ -29,6 +29,10 @@ const deleteCategory = () => {
             confirmingDeletion.value = false;
             categoryToDelete.value = null;
         },
+        onError: () => {
+            confirmingDeletion.value = false;
+            categoryToDelete.value = null;
+        },
     });
 };
 

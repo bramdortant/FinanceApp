@@ -39,7 +39,8 @@ class AccountController extends Controller
     {
         Account::create($request->validated());
 
-        return Redirect::route('accounts.index');
+        return Redirect::route('accounts.index')
+            ->with('success', 'Rekening aangemaakt.');
     }
 
     public function edit(Account $account): Response
@@ -53,13 +54,15 @@ class AccountController extends Controller
     {
         $account->update($request->validated());
 
-        return Redirect::route('accounts.index');
+        return Redirect::route('accounts.index')
+            ->with('success', 'Rekening bijgewerkt.');
     }
 
     public function destroy(Account $account): RedirectResponse
     {
         $account->delete();
 
-        return Redirect::route('accounts.index');
+        return Redirect::route('accounts.index')
+            ->with('success', 'Rekening verwijderd.');
     }
 }

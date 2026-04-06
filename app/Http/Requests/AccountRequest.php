@@ -16,7 +16,7 @@ class AccountRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'type' => ['required', 'string', 'in:checking,savings,cash'],
-            'starting_balance' => ['required', 'numeric', 'min:-9999999.99', 'max:9999999.99'],
+            'starting_balance' => ['required', 'numeric', 'decimal:0,2', 'min:-9999999.99', 'max:9999999.99'],
         ];
     }
 }

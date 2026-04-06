@@ -71,6 +71,8 @@ const submit = () => {
                                 id="starting_balance"
                                 type="number"
                                 step="0.01"
+                                min="-9999999.99"
+                                max="9999999.99"
                                 class="mt-1 block w-full"
                                 v-model="form.starting_balance"
                                 required

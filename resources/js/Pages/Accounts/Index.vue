@@ -27,6 +27,10 @@ const deleteAccount = () => {
             confirmingDeletion.value = false;
             accountToDelete.value = null;
         },
+        onError: () => {
+            confirmingDeletion.value = false;
+            accountToDelete.value = null;
+        },
     });
 };
 

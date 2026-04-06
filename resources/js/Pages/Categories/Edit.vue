@@ -20,7 +20,7 @@ const props = defineProps({
 const form = useForm({
     name: props.category.name,
     parent_id: props.category.parent_id,
-    color: props.category.color,
+    color: props.category.color || '#6B7280',
 });
 
 const submit = () => {

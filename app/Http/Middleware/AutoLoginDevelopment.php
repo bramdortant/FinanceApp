@@ -12,7 +12,7 @@ class AutoLoginDevelopment
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (app()->environment('local') && ! Auth::check()) {
+        if (app()->environment('local') && config('app.debug') && ! Auth::check()) {
             $user = User::where('email', 'admin@financeapp.local')->first();
 
             if ($user) {
