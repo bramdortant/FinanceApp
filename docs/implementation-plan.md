@@ -391,7 +391,6 @@ This is the simplest feature — a good first experience with Vue + Inertia.
 **Cleanup from Phase 0:**
 
 - Set up Dutch localization (config/app.php locale, date/currency formatting)
-- Add ARIA accessibility attributes when customizing the default layout
 
 **README update**: Replace default Laravel README with project
 description, Docker setup instructions, and how to run migrations.
@@ -414,6 +413,11 @@ description, Docker setup instructions, and how to run migrations.
 - **TransactionType enum**: Add a PHP 8.1+ backed enum for the type
   field (income/expense/transfer) — gives IDE autocompletion and type
   safety when building transaction forms
+
+**Accessibility pass**: Add ARIA attributes across all existing and new
+UI components (`role="alert"` on flash messages, `aria-label` on color
+swatches, semantic landmarks). Deferred from Phase 2 to do a single
+comprehensive pass once more UI exists.
 
 **README update**: Add manual transaction entry and transfer usage.
 
@@ -681,17 +685,20 @@ Switchable chart views — same data, different perspectives:
 
 **Deliverable**: Split a single transaction across multiple categories.
 
-### Phase 9: Sub-Categories (Hierarchical)
+### Phase 9: Sub-Categories — Tree Display & Dashboard Grouping
 
 **Branch**: `feature/sub-categories`
 
-- **Parent category selector**: When creating a category, optionally pick
-  a parent (e.g., "Foods" under "Groceries")
-- **Tree display**: Show categories as a collapsible tree
+Note: Parent/child category selection, loop prevention, and deletion
+guards were already built in Phase 2. This phase adds the visual and
+analytical layers on top of that existing data model.
+
+- **Tree display**: Show categories as a collapsible tree (instead of
+  the current flat list)
 - **Dashboard grouping**: Charts can show parent-level or drill into
   sub-categories
 
-**Deliverable**: Organize categories into parent/child groups.
+**Deliverable**: Visual hierarchy for categories and grouped insights.
 
 ### Phase 10: Polish and Deployment
 
@@ -708,7 +715,9 @@ Switchable chart views — same data, different perspectives:
   by default), auth required
 - **Update admin credentials**: Change the seeded user email and
   password from the development defaults (<admin@financeapp.local> /
-  password) to real credentials before deploying
+  password) to real credentials before deploying. Also remove the
+  `'password'` fallback from UserSeeder — require `DEV_ADMIN_PASSWORD`
+  env var or skip seeding entirely
 - **Remove auto-login middleware**: The AutoLoginDevelopment middleware
   only runs in local environment, but remove it entirely in production
   config for extra safety
