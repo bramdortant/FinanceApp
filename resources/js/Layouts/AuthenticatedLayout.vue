@@ -39,6 +39,18 @@ const showingNavigationDropdown = ref(false);
                                 >
                                     Dashboard
                                 </NavLink>
+                                <NavLink
+                                    :href="route('accounts.index')"
+                                    :active="route().current('accounts.*')"
+                                >
+                                    Rekeningen
+                                </NavLink>
+                                <NavLink
+                                    :href="route('categories.index')"
+                                    :active="route().current('categories.*')"
+                                >
+                                    Categorieën
+                                </NavLink>
                             </div>
                         </div>
 
@@ -74,14 +86,14 @@ const showingNavigationDropdown = ref(false);
                                         <DropdownLink
                                             :href="route('profile.edit')"
                                         >
-                                            Profile
+                                            Profiel
                                         </DropdownLink>
                                         <DropdownLink
                                             :href="route('logout')"
                                             method="post"
                                             as="button"
                                         >
-                                            Log Out
+                                            Uitloggen
                                         </DropdownLink>
                                     </template>
                                 </Dropdown>
@@ -146,6 +158,18 @@ const showingNavigationDropdown = ref(false);
                         >
                             Dashboard
                         </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('accounts.index')"
+                            :active="route().current('accounts.*')"
+                        >
+                            Rekeningen
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('categories.index')"
+                            :active="route().current('categories.*')"
+                        >
+                            Categorieën
+                        </ResponsiveNavLink>
                     </div>
 
                     <!-- Responsive Settings Options -->
@@ -165,14 +189,14 @@ const showingNavigationDropdown = ref(false);
 
                         <div class="mt-3 space-y-1">
                             <ResponsiveNavLink :href="route('profile.edit')">
-                                Profile
+                                Profiel
                             </ResponsiveNavLink>
                             <ResponsiveNavLink
                                 :href="route('logout')"
                                 method="post"
                                 as="button"
                             >
-                                Log Out
+                                Uitloggen
                             </ResponsiveNavLink>
                         </div>
                     </div>
