@@ -11,6 +11,8 @@
 - **Hosting**: Oracle Cloud Free Tier (later)
 - **Local dev**: Docker (same setup locally and in production)
 - **Containerization**: Docker + Docker Compose
+- **UI Language**: Dutch — all user-facing text in Dutch, code and
+  database values in English
 
 ## Phase 0: Project Setup
 
@@ -239,12 +241,27 @@ Oracle Cloud (Phase 10), the app runs 24/7 independently.
 ### Branch strategy
 
 ```text
-main (production-ready code)
+production (live on Oracle Cloud — only receives tested code)
+  ↑ merge when ready
+development (active work — feature branches merge here)
   └── feature/xxx (one branch per feature, PR with CodeRabbit review)
 ```
 
-Each feature gets its own branch. Create a PR, CodeRabbit reviews it,
-fix any issues, then merge to main. This keeps main always working.
+Two long-lived branches:
+
+- **development**: Where all active work happens. Feature branches are
+  created from and merged back into development. Safe to break — this
+  is your local/testing environment
+- **production**: The code running on Oracle Cloud. Only receives merges
+  from development when a feature is complete and tested. This protects
+  live data from half-finished features or refactors
+
+Both branches are protected: no direct pushes, no deletion. All changes
+go through PRs with CodeRabbit review.
+
+**Note**: During early development (before Phase 10 deployment), we use
+`main` as the single branch. The `development` + `production` split
+happens in Phase 10 when we actually deploy.
 
 ### PR workflow
 
@@ -253,7 +270,57 @@ fix any issues, then merge to main. This keeps main always working.
 3. Push and create PR: `gh pr create`
 4. CodeRabbit reviews automatically
 5. Fix any CodeRabbit feedback
-6. Merge to main
+6. Merge to development
+7. When ready for production: create PR from development → production
+
+---
+
+## Architecture & Patterns
+
+We follow established patterns to keep the code organized, secure,
+and maintainable as the app grows.
+
+### MVC (Model-View-Controller)
+
+The core pattern of the application:
+
+- **Models** (`app/Models/`): Represent database tables. Handle
+  relationships, data casting, and define which fields can be filled.
+  Example: `Account`, `Category`, `Transaction`
+- **Controllers** (`app/Http/Controllers/`): Handle HTTP requests.
+  Receive input, call the model, and return a response (either a
+  page or a redirect). Each controller maps to one resource.
+  Example: `AccountController` handles all account CRUD operations
+- **Views** (`resources/js/Pages/`): Vue components rendered via
+  Inertia. Display data and capture user input. No business logic
+  here — just presentation
+
+### Form Requests
+
+Validation logic lives in dedicated Form Request classes
+(`app/Http/Requests/`), not in controllers. This keeps controllers
+thin and makes validation rules reusable and testable.
+Example: `CategoryRequest` validates name, color, and prevents
+circular parent chains.
+
+### Resource Controllers
+
+Controllers follow Laravel's resource convention with standard method
+names: `index`, `create`, `store`, `edit`, `update`, `destroy`. This
+gives predictable URLs and method names across all resources.
+
+### Middleware
+
+Cross-cutting concerns (authentication, auto-login, flash messages)
+are handled by middleware — code that runs before/after every request
+without cluttering controllers.
+
+### Service Classes (from Phase 4 onward)
+
+When business logic gets complex (CSV parsing, AI categorization),
+it moves into service classes (`app/Services/`). Controllers stay
+thin — they call the service and return the result. This keeps each
+class focused on one responsibility.
 
 ---
 
@@ -323,9 +390,11 @@ This is the simplest feature — a good first experience with Vue + Inertia.
 
 **Cleanup from Phase 0:**
 
-- Remove `postcss.config.js` (leftover from Tailwind v3, not needed with v4)
 - Set up Dutch localization (config/app.php locale, date/currency formatting)
 - Add ARIA accessibility attributes when customizing the default layout
+
+**README update**: Replace default Laravel README with project
+description, Docker setup instructions, and how to run migrations.
 
 **Deliverable**: You can manage your accounts and spending categories.
 
@@ -345,6 +414,8 @@ This is the simplest feature — a good first experience with Vue + Inertia.
 - **TransactionType enum**: Add a PHP 8.1+ backed enum for the type
   field (income/expense/transfer) — gives IDE autocompletion and type
   safety when building transaction forms
+
+**README update**: Add manual transaction entry and transfer usage.
 
 **Deliverable**: You can add transactions, make transfers, and see balances.
 
@@ -367,6 +438,8 @@ This is the simplest feature — a good first experience with Vue + Inertia.
   check against existing transactions. Show duplicates with option to
   skip them
 - **Import confirmation**: Show summary (X new, Y duplicates skipped)
+
+**README update**: Add CSV import instructions and supported bank formats.
 
 **Deliverable**: Upload a bank CSV and import transactions into a specific
 account.
@@ -429,6 +502,8 @@ the new app with categories preserved.
   correction. These corrections serve double duty: they become local
   rules immediately, and they feed into AI context in Phase 6
 
+**README update**: Add categorization workflow overview.
+
 **Deliverable**: Efficiently categorize imported transactions.
 
 ### Phase 6: AI Auto-Categorization
@@ -457,6 +532,79 @@ the new app with categories preserved.
   for the current transaction, keeping prompts focused and API costs low
 - The system prompt stays stable; corrections go in the user message
 
+**Structured output with confidence & reasoning:**
+
+The AI returns a JSON object for each transaction, not just a category name.
+We use OpenAI's structured output feature (`response_format` with
+`json_schema` and `strict: true`) to guarantee valid responses. Each
+categorization includes three fields:
+
+```json
+{
+  "category": {
+    "value": "Groceries",
+    "reasoning": "Albert Heijn is a Dutch supermarket chain",
+    "certainty": 95
+  }
+}
+```
+
+- **value**: The suggested category (must be from the provided list)
+- **reasoning**: Why the AI chose this category (helps you understand
+  and spot mistakes)
+- **certainty**: Confidence percentage (0-100). Used to decide:
+  - 85-100%: Auto-assign (high confidence)
+  - 50-84%: Show for user review with the reasoning
+  - Below 50%: Flag as "needs manual categorization"
+- These thresholds are configurable and can be tuned over time based
+  on actual accuracy
+
+**One-shot tracking (Phase 7 addition):**
+
+Track how often the AI gets it right without correction:
+
+- When user confirms or changes an AI suggestion, store the result
+- Calculate one-shot rate (% of suggestions accepted without edits)
+- Track which categories the AI struggles with
+- Use this data to improve prompts and identify where more rules
+  are needed
+
+**AI security measures:**
+
+Our use case is low-risk (single-purpose categorization of bank data,
+no tools, no conversation), but we apply layered defense following
+OWASP LLM Top 10 (2025) and Agentic Applications Top 10 (2026):
+
+1. **No tools**: The AI has no tool access (`tool_choice: 'none'` or
+   simply no tools in the request). It can only return a JSON response.
+   Even if a malicious transaction description says "call the delete
+   function", the AI literally cannot — no tools are available
+2. **Structured output enforcement**: `strict: true` in the JSON schema
+   forces the model to output only valid JSON matching our schema. The
+   AI cannot return arbitrary text, code, or instructions — only a
+   category value, reasoning string, and certainty number
+3. **System prompt separation**: The system prompt is sent as a separate
+   API parameter (not mixed into user messages), making it harder to
+   override with injected instructions
+4. **Input delimiters**: Transaction data is wrapped in clear delimiters
+   (`===TRANSACTION DATA===`) so the AI distinguishes data from
+   instructions
+5. **Output validation**: AI responses are validated against the JSON
+   schema before being used. Invalid responses are rejected and the
+   transaction is flagged for manual categorization
+6. **Anonymization** (see Privacy section): Reduces sensitive data
+   exposure even if the API were compromised
+
+**Why this level is sufficient:**
+
+- Our AI input is bank transaction data (structured, predictable), not
+  arbitrary user text — the attack surface is inherently small
+- Our AI output is a category name (from a fixed list) — even a
+  successful injection can only result in a wrong category, not data
+  loss or code execution
+- The human-in-the-loop review (for low-confidence results) catches
+  any remaining issues
+
 **Privacy & data minimization:**
 
 - **Local rules first**: Rule-based matching handles most transactions
@@ -476,8 +624,12 @@ the new app with categories preserved.
   (unlike ChatGPT). Data is retained up to 30 days for abuse
   monitoring only
 
-**Deliverable**: AI suggests categories, learns from your corrections,
-while keeping personal data private.
+**README update**: Add OpenAI setup instructions (API key
+configuration) and AI categorization feature overview.
+
+**Deliverable**: AI suggests categories with confidence scores, learns
+from your corrections, while keeping personal data private and defended
+against prompt injection.
 
 ### Phase 7: Dashboard and Insights
 
@@ -499,6 +651,8 @@ Switchable chart views — same data, different perspectives:
   expenses totaling €Y/month"
 - **Payment method breakdown**: Using the bank's transaction code field
   (ba = pin, id = iDEAL, ei = direct debit, cb = bank transfer, etc.)
+
+**README update**: Add dashboard features overview and screenshots.
 
 **Deliverable**: Visual insights into your spending from multiple angles.
 
@@ -552,10 +706,22 @@ Switchable chart views — same data, different perspectives:
   your phone home screen
 - **Basic security**: Rate limiting, CSRF protection (Laravel has this
   by default), auth required
+- **Update admin credentials**: Change the seeded user email and
+  password from the development defaults (<admin@financeapp.local> /
+  password) to real credentials before deploying
+- **Remove auto-login middleware**: The AutoLoginDevelopment middleware
+  only runs in local environment, but remove it entirely in production
+  config for extra safety
 - **Dockerfile hardening**: Run containers as non-root user (deferred
   from Phase 0 CodeRabbit review — not needed during local development)
 - **Remove Laravel version info**: Strip version exposure from default
   pages/headers before going public
+- **Branch split**: Rename `main` to `development`, create
+  `production` branch. Set up GitHub branch protection rules on
+  both — prevent deletion, no direct pushes, require PR reviews
+
+**README update**: Add deployment instructions, production URL, and
+final feature list.
 
 **Deliverable**: App is live and accessible from your phone.
 
