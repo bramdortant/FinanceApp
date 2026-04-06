@@ -149,7 +149,7 @@ const accountTypeLabels = {
                 </h2>
                 <p class="mt-1 text-sm text-gray-600">
                     Weet je zeker dat je "{{ accountToDelete?.name }}" wilt verwijderen?
-                    Alle transacties in deze rekening worden ook verwijderd.
+                    Deze rekening kan alleen verwijderd worden als er geen transacties aan gekoppeld zijn.
                 </p>
                 <div class="mt-6 flex justify-end gap-3">
                     <SecondaryButton @click="closeModal">Annuleren</SecondaryButton>

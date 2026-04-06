@@ -14,7 +14,7 @@ class CategoryController extends Controller
     public function index(): Response
     {
         $categories = Category::with('parent')
-            ->withCount('transactions')
+            ->withCount(['transactions', 'children'])
             ->orderBy('name')
             ->get();
 
@@ -64,6 +64,11 @@ class CategoryController extends Controller
         if ($category->transactions()->exists()) {
             return Redirect::route('categories.index')
                 ->with('error', 'Kan een categorie met transacties niet verwijderen.');
+        }
+
+        if (Category::where('parent_id', $category->id)->exists()) {
+            return Redirect::route('categories.index')
+                ->with('error', 'Kan een categorie met subcategorieën niet verwijderen.');
         }
 
         $category->delete();

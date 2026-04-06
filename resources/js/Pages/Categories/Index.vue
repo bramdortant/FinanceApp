@@ -131,9 +131,9 @@ const closeModal = () => {
                                     </Link>
                                     <button
                                         class="ml-3 text-sm text-red-600 hover:text-red-500"
-                                        :class="{ 'opacity-30 cursor-not-allowed': category.transactions_count > 0 }"
-                                        :disabled="category.transactions_count > 0"
-                                        :title="category.transactions_count > 0 ? 'Kan niet verwijderen: heeft transacties' : 'Categorie verwijderen'"
+                                        :class="{ 'opacity-30 cursor-not-allowed': category.transactions_count > 0 || category.children_count > 0 }"
+                                        :disabled="category.transactions_count > 0 || category.children_count > 0"
+                                        :title="category.transactions_count > 0 ? 'Kan niet verwijderen: heeft transacties' : category.children_count > 0 ? 'Kan niet verwijderen: heeft subcategorieën' : 'Categorie verwijderen'"
                                         @click="confirmDelete(category)"
                                     >
                                         Verwijderen
