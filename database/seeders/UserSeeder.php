@@ -9,11 +9,15 @@ class UserSeeder extends Seeder
 {
     public function run(): void
     {
+        if (! app()->environment(['local', 'testing'])) {
+            return;
+        }
+
         User::firstOrCreate(
             ['email' => 'admin@financeapp.local'],
             [
                 'name' => 'Admin',
-                'password' => 'password',
+                'password' => env('DEV_ADMIN_PASSWORD', 'password'),
             ]
         );
     }

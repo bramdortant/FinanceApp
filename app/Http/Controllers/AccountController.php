@@ -60,6 +60,11 @@ class AccountController extends Controller
 
     public function destroy(Account $account): RedirectResponse
     {
+        if ($account->transactions()->exists()) {
+            return Redirect::route('accounts.index')
+                ->with('error', 'Kan een rekening met transacties niet verwijderen.');
+        }
+
         $account->delete();
 
         return Redirect::route('accounts.index')

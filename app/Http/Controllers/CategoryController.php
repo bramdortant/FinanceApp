@@ -34,7 +34,8 @@ class CategoryController extends Controller
     {
         Category::create($request->validated());
 
-        return Redirect::route('categories.index');
+        return Redirect::route('categories.index')
+            ->with('success', 'Categorie aangemaakt.');
     }
 
     public function edit(Category $category): Response
@@ -54,7 +55,8 @@ class CategoryController extends Controller
     {
         $category->update($request->validated());
 
-        return Redirect::route('categories.index');
+        return Redirect::route('categories.index')
+            ->with('success', 'Categorie bijgewerkt.');
     }
 
     public function destroy(Category $category): RedirectResponse
@@ -66,7 +68,8 @@ class CategoryController extends Controller
 
         $category->delete();
 
-        return Redirect::route('categories.index');
+        return Redirect::route('categories.index')
+            ->with('success', 'Categorie verwijderd.');
     }
 
     private function getDescendantIds(int $categoryId): array

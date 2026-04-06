@@ -3,8 +3,8 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import DangerButton from '@/Components/DangerButton.vue';
 import Modal from '@/Components/Modal.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
-import { Head, Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 
 defineProps({
     accounts: {
@@ -12,6 +12,8 @@ defineProps({
         required: true,
     },
 });
+
+const flash = computed(() => usePage().props.flash);
 
 const confirmingDeletion = ref(false);
 const accountToDelete = ref(null);
@@ -73,6 +75,19 @@ const accountTypeLabels = {
 
         <div class="py-12">
             <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
+                <div
+                    v-if="flash?.success"
+                    class="mb-4 rounded-md bg-green-50 p-4 text-sm text-green-700"
+                >
+                    {{ flash.success }}
+                </div>
+                <div
+                    v-if="flash?.error"
+                    class="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700"
+                >
+                    {{ flash.error }}
+                </div>
+
                 <div v-if="accounts.length === 0" class="overflow-hidden bg-white shadow-sm sm:rounded-lg">
                     <div class="p-6 text-center text-gray-500">
                         Nog geen rekeningen.

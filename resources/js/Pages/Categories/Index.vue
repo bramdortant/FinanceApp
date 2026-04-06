@@ -63,6 +63,12 @@ const closeModal = () => {
         <div class="py-12">
             <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
                 <div
+                    v-if="flash?.success"
+                    class="mb-4 rounded-md bg-green-50 p-4 text-sm text-green-700"
+                >
+                    {{ flash.success }}
+                </div>
+                <div
                     v-if="flash?.error"
                     class="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700"
                 >
