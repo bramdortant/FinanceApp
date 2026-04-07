@@ -883,6 +883,12 @@ heavier flows like CSV import stay on the desktop.
   recent activity).
 - Pick a small visual language to commit to: spacing scale, typography, colour
   accents, button hierarchy, empty-state illustrations.
+- **Suggestion to evaluate**: replace the current category colour swatch with a
+  Font Awesome (or similar) icon per category, tinted with the category's hex
+  colour. Would need a `categories.icon` column, an icon picker in the category
+  create/edit forms, and updates anywhere a category is rendered (transaction
+  list, quick-add modal, categories index). Decide during the investigation
+  whether this is worth the scope.
 
 **Then implement**:
 
