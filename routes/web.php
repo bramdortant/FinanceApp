@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\CsvImportController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\TransactionController;
 use Illuminate\Support\Facades\Route;
@@ -19,6 +20,10 @@ Route::middleware('auth')->group(function () {
     Route::get('accounts/all', [AccountController::class, 'all'])->name('accounts.all');
     Route::resource('accounts', AccountController::class);
     Route::resource('categories', CategoryController::class)->except(['show']);
+
+    Route::get('csv-imports/create', [CsvImportController::class, 'create'])->name('csv-imports.create');
+    Route::post('csv-imports/preview', [CsvImportController::class, 'preview'])->name('csv-imports.preview');
+    Route::post('csv-imports', [CsvImportController::class, 'store'])->name('csv-imports.store');
 
     Route::post('accounts/{account}/transactions', [TransactionController::class, 'store'])->name('transactions.store');
     Route::put('transactions/{transaction}', [TransactionController::class, 'update'])->name('transactions.update');

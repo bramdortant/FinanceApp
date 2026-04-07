@@ -51,6 +51,12 @@ const showingNavigationDropdown = ref(false);
                                 >
                                     Categorieën
                                 </NavLink>
+                                <NavLink
+                                    :href="route('csv-imports.create')"
+                                    :active="route().current('csv-imports.*')"
+                                >
+                                    Importeren
+                                </NavLink>
                             </div>
                         </div>
 

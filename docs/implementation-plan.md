@@ -315,7 +315,7 @@ Cross-cutting concerns (authentication, auto-login, flash messages)
 are handled by middleware — code that runs before/after every request
 without cluttering controllers.
 
-### Service Classes (from Phase 4 onward)
+### Service Classes (from Phase 4a onward)
 
 When business logic gets complex (CSV parsing, AI categorization),
 it moves into service classes (`app/Services/`). Controllers stay
@@ -570,12 +570,16 @@ viewing accounts, entering transactions (cash/manual), cloning past
 entries, and making transfers — all designed to extend cleanly into
 Phase 4 (CSV import) and beyond.
 
-### Phase 4: CSV Import
+### Phase 4a: CSV Import
 
 **Branch**: `feature/csv-import`
 
-- **Upload page**: File picker for CSV, account selector (which account
-  is this CSV for?)
+- **Upload page**: File picker for CSV. The target account is
+  **auto-detected from the IBAN inside the CSV** (Rabobank exports
+  include the owner IBAN). If the IBAN matches an existing account, use
+  it. If not, prompt the user to either pick an existing account or
+  create a new one on the spot. No mandatory dropdown for the common
+  case.
 - **CSV preview**: Show parsed rows before importing (so you can verify)
 - **Column mapping**: Match CSV columns to our fields (date, description,
   amount, counterparty_name, counterparty_iban, balance_after,
@@ -883,6 +887,20 @@ heavier flows like CSV import stay on the desktop.
   recent activity).
 - Pick a small visual language to commit to: spacing scale, typography, colour
   accents, button hierarchy, empty-state illustrations.
+- **Nice-to-have from Phase 4a**: watch-folder CSV import. Drop a Rabobank
+  CSV into a designated folder and have it imported automatically. Simplest
+  route: a Laravel scheduled command (hourly cron) scans an inbox folder,
+  imports each file via the existing `CsvImportService`, and moves it to
+  `processed/` or `failed/`. Because the app server can't reach the user's
+  laptop directly, pair this with a cloud sync tool (Nextcloud / Dropbox /
+  Syncthing) that mirrors a local "Downloads → FinanceApp" folder to the
+  server's inbox folder. Side benefit: offsite backup of CSV archive.
+- **Nice-to-have from Phase 4a**: cross-CSV transfer deduplication. Phase 4a
+  intentionally skipped this because the user only imports from one side of the
+  transfer (the payment account). If a future workflow requires importing both
+  sides, add detection: when a parsed row's counterparty IBAN matches an own
+  account, look for an existing transfer with the opposite direction within ±1
+  day and skip it as a duplicate.
 - **Suggestion to evaluate**: replace the current category colour swatch with a
   Font Awesome (or similar) icon per category, tinted with the category's hex
   colour. Would need a `categories.icon` column, an icon picker in the category

@@ -70,6 +70,7 @@ hostname -I
 - **Categories** — organise spending with parent/child categories, custom colours, and an income/expense type.
 - **Account-centric transactions** — open an account to see its history and add entries with one of four actions: income, expense, transfer between your own accounts, or clone a previous entry.
 - **All-accounts overview** — combined read-only view across every account.
+- **CSV import (Rabobank)** — upload a Rabobank CSV export and the matching account is auto-detected from the IBAN inside the file. Overlapping periods are deduplicated automatically via a per-row hash, so re-uploading or importing overlapping date ranges is safe. Transactions where the counterparty IBAN matches one of your own accounts are recognised as transfers.
 - **Encryption at rest** — sensitive fields (`accounts.iban`, `transactions.counterparty_name`, `transactions.counterparty_iban`) are encrypted with Laravel's `encrypted` cast (AES-256-CBC, keyed off `APP_KEY`).
 
 > ⚠️ **Back up `APP_KEY` somewhere safe.** If you lose it, every encrypted field becomes unreadable — Laravel cannot recover them.
