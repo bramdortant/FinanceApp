@@ -155,16 +155,14 @@ class CsvImportController extends Controller
         $totalNew = 0;
         $totalSkipped = 0;
         $firstAccountId = null;
-        $missingIban = null;
 
         try {
             $grouped = $this->parser->parse(Storage::path($stashPath));
 
-            DB::transaction(function () use ($grouped, $originalFilename, &$totalNew, &$totalSkipped, &$firstAccountId, &$missingIban) {
+            DB::transaction(function () use ($grouped, $originalFilename, &$totalNew, &$totalSkipped, &$firstAccountId) {
                 foreach ($grouped as $iban => $rows) {
                     $account = $this->service->detectAccount($iban);
                     if ($account === null) {
-                        $missingIban = $iban;
                         throw new \RuntimeException("Rekening voor IBAN {$iban} niet meer gevonden.");
                     }
 
