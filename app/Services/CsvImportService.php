@@ -52,7 +52,7 @@ class CsvImportService
             ->pluck('csv_import_hash')
             ->flip();
 
-        $summary = ['new' => 0, 'duplicate' => 0, 'transfer' => 0];
+        $summary = ['new' => 0, 'duplicate' => 0, 'transfer' => 0, 'mirror' => 0];
         $annotated = [];
 
         foreach ($rows as $row) {
@@ -60,9 +60,19 @@ class CsvImportService
 
             $transferTarget = $this->detectTransferTarget($row, $ownAccounts, $account);
 
+            // For an internal transfer between two own accounts, both sides
+            // appear in the CSV (one negative, one positive). We only keep
+            // the negative "source" side and skip the positive "mirror" side
+            // — Phase 3's storage model uses a single signed row + transfer_to.
+            $isMirror = $transferTarget !== null
+                && bccomp($row['amount'], '0', 2) > 0;
+
             if (isset($existingHashes[$hash])) {
                 $status = 'duplicate';
                 $summary['duplicate']++;
+            } elseif ($isMirror) {
+                $status = 'transfer_mirror';
+                $summary['mirror']++;
             } elseif ($transferTarget !== null) {
                 $status = 'transfer';
                 $summary['transfer']++;
@@ -95,7 +105,7 @@ class CsvImportService
         return DB::transaction(function () use ($previewRows, $account, $filename) {
             $toInsert = array_filter(
                 $previewRows,
-                fn (array $r) => $r['status'] !== 'duplicate'
+                fn (array $r) => $r['status'] !== 'duplicate' && $r['status'] !== 'transfer_mirror'
             );
 
             $import = CsvImport::create([

@@ -47,7 +47,7 @@ class CsvImportController extends Controller
         Storage::put($stashPath, file_get_contents($file->getRealPath()));
 
         try {
-            $parsed = $this->parser->parse(Storage::path($stashPath));
+            $grouped = $this->parser->parse(Storage::path($stashPath));
         } catch (\RuntimeException $e) {
             Storage::delete($stashPath);
 
@@ -55,30 +55,37 @@ class CsvImportController extends Controller
                 ->withErrors(['csv' => $e->getMessage()]);
         }
 
-        $account = $this->service->detectAccount($parsed['owner_iban']);
+        $sections = [];
+        $missing = [];
 
-        if ($account === null) {
-            // No matching account: bail out and ask the user to create one.
-            // We deliberately keep this simple in Phase 4a — the user picks
-            // or creates the account before retrying the upload.
+        foreach ($grouped as $iban => $rows) {
+            $account = $this->service->detectAccount($iban);
+
+            if ($account === null) {
+                $missing[] = $iban;
+                continue;
+            }
+
+            $preview = $this->service->buildPreview($rows, $account);
+            $sections[] = [
+                'account' => ['id' => $account->id, 'name' => $account->name],
+                'rows' => $preview['rows'],
+                'summary' => $preview['summary'],
+            ];
+        }
+
+        if (! empty($missing)) {
             Storage::delete($stashPath);
 
             return Redirect::route('csv-imports.create')->withErrors([
-                'csv' => "Geen rekening gevonden met IBAN {$parsed['owner_iban']}. Maak eerst de rekening aan.",
+                'csv' => 'Geen rekening gevonden voor IBAN: '.implode(', ', $missing).'. Maak deze eerst aan.',
             ]);
         }
-
-        $preview = $this->service->buildPreview($parsed['rows'], $account);
 
         return Inertia::render('CsvImports/Preview', [
             'token' => $token,
             'originalFilename' => $file->getClientOriginalName(),
-            'account' => [
-                'id' => $account->id,
-                'name' => $account->name,
-            ],
-            'rows' => $preview['rows'],
-            'summary' => $preview['summary'],
+            'sections' => $sections,
         ]);
     }
 
@@ -101,27 +108,36 @@ class CsvImportController extends Controller
         }
 
         try {
-            $parsed = $this->parser->parse(Storage::path($stashPath));
-            $account = $this->service->detectAccount($parsed['owner_iban']);
+            $grouped = $this->parser->parse(Storage::path($stashPath));
+            $totalNew = 0;
+            $totalSkipped = 0;
+            $firstAccountId = null;
 
-            if ($account === null) {
-                return Redirect::route('csv-imports.create')
-                    ->withErrors(['csv' => 'Rekening niet meer gevonden.']);
+            foreach ($grouped as $iban => $rows) {
+                $account = $this->service->detectAccount($iban);
+                if ($account === null) {
+                    return Redirect::route('csv-imports.create')
+                        ->withErrors(['csv' => "Rekening voor IBAN {$iban} niet meer gevonden."]);
+                }
+
+                $preview = $this->service->buildPreview($rows, $account);
+                $import = $this->service->commit(
+                    $preview['rows'],
+                    $account,
+                    $request->string('original_filename')->toString(),
+                );
+
+                $totalNew += $import->imported_count;
+                $totalSkipped += $import->skipped_count;
+                $firstAccountId ??= $account->id;
             }
-
-            $preview = $this->service->buildPreview($parsed['rows'], $account);
-            $import = $this->service->commit(
-                $preview['rows'],
-                $account,
-                $request->string('original_filename')->toString(),
-            );
         } finally {
             Storage::delete($stashPath);
         }
 
-        return Redirect::route('accounts.show', $account->id)->with(
+        return Redirect::route('accounts.show', $firstAccountId)->with(
             'success',
-            "Import voltooid: {$import->imported_count} nieuw, {$import->skipped_count} overgeslagen."
+            "Import voltooid: {$totalNew} nieuw, {$totalSkipped} overgeslagen."
         );
     }
 }

@@ -35,9 +35,14 @@ class RabobankCsvParser
     ];
 
     /**
-     * Parse the file at $path into normalized rows.
+     * Parse the file at $path into normalized rows, grouped by owner IBAN.
      *
-     * @return array{owner_iban: string, rows: array<int, array<string, mixed>>}
+     * One Rabobank CSV may contain rows for multiple accounts (e.g. when
+     * downloading via "Download transacties" with multiple accounts
+     * selected). The first column of each row is the account that owns
+     * that row, so we group rows by that column.
+     *
+     * @return array<string, array<int, array<string, mixed>>> Map of owner IBAN → rows
      */
     public function parse(string $path): array
     {
@@ -68,8 +73,7 @@ class RabobankCsvParser
             }
 
             $index = array_flip($headers);
-            $rows = [];
-            $ownerIban = null;
+            $grouped = [];
             $lineNumber = 1;
 
             while (($raw = fgetcsv($handle)) !== false) {
@@ -84,14 +88,10 @@ class RabobankCsvParser
                     ? trim((string) $raw[$index[$col]])
                     : '';
 
-                $iban = $get('IBAN/BBAN');
+                $iban = $this->normalizeIban($get('IBAN/BBAN'));
                 if ($iban === '') {
                     throw new RuntimeException("Lege IBAN op regel {$lineNumber}.");
                 }
-
-                // First non-blank IBAN is the owner of this CSV.
-                // We assume one CSV = one account (Rabobank exports per account).
-                $ownerIban ??= $iban;
 
                 $currency = $get('Munt');
                 if ($currency !== '' && $currency !== 'EUR') {
@@ -100,7 +100,7 @@ class RabobankCsvParser
                     );
                 }
 
-                $rows[] = [
+                $grouped[$iban][] = [
                     'date' => $get('Datum'),
                     'amount' => $this->normalizeAmount($get('Bedrag')),
                     'balance_after' => $this->normalizeAmount($get('Saldo na trn')),
@@ -120,14 +120,11 @@ class RabobankCsvParser
                 ];
             }
 
-            if ($ownerIban === null) {
+            if (empty($grouped)) {
                 throw new RuntimeException('Geen rijen gevonden in CSV.');
             }
 
-            return [
-                'owner_iban' => $ownerIban,
-                'rows' => $rows,
-            ];
+            return $grouped;
         } finally {
             fclose($handle);
         }
@@ -149,6 +146,11 @@ class RabobankCsvParser
 
         // bcadd with scale 2 normalizes to two decimals and validates the format.
         return bcadd($clean, '0', 2);
+    }
+
+    private function normalizeIban(string $iban): string
+    {
+        return strtoupper(preg_replace('/\s+/', '', $iban));
     }
 
     private function joinDescriptions(string ...$parts): string
