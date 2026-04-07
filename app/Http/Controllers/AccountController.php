@@ -7,6 +7,7 @@ use App\Models\Account;
 use App\Models\Category;
 use App\Models\Transaction;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Redirect;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -15,8 +16,11 @@ class AccountController extends Controller
 {
     public function index(): Response
     {
-        $accounts = Account::all()->map(function (Account $account) {
-            $account->current_balance = $this->calculateBalance($account);
+        $accounts = Account::all();
+        $balances = $this->balanceMap($accounts);
+
+        $accounts = $accounts->map(function (Account $account) use ($balances) {
+            $account->current_balance = $balances[$account->id] ?? (string) $account->starting_balance;
 
             return $account;
         });
@@ -28,10 +32,9 @@ class AccountController extends Controller
 
     public function all(): Response
     {
-        $totalBalance = Account::all()->reduce(
-            fn ($carry, Account $account) => bcadd($carry, $this->calculateBalance($account), 2),
-            '0'
-        );
+        $accounts = Account::all();
+        $balances = $this->balanceMap($accounts);
+        $totalBalance = array_reduce($balances, fn ($carry, $bal) => bcadd($carry, $bal, 2), '0');
 
         $transactions = Transaction::query()
             ->with(['category:id,name,color', 'account:id,name', 'transferToAccount:id,name'])
@@ -48,7 +51,8 @@ class AccountController extends Controller
 
     public function show(Account $account): Response
     {
-        $account->current_balance = $this->calculateBalance($account);
+        $account->current_balance = $this->balanceMap(collect([$account]))[$account->id]
+            ?? (string) $account->starting_balance;
 
         $transactions = Transaction::query()
             ->where(function ($query) use ($account) {
@@ -80,16 +84,40 @@ class AccountController extends Controller
         ]);
     }
 
-    private function calculateBalance(Account $account): string
+    /**
+     * Compute current balances for many accounts in a constant number of queries.
+     * Returns ['<account_id>' => '<balance string>'].
+     *
+     * Two grouped sums are used: total of own-account transactions (which are
+     * already signed) and total of inbound transfers (negative on the source
+     * row), then combined with the starting balance per account.
+     */
+    private function balanceMap(Collection $accounts): array
     {
-        $outgoing = (string) ($account->transactions()->sum('amount') ?: '0');
-        $incomingTransfers = (string) (Transaction::where('transfer_to_account_id', $account->id)->sum('amount') ?: '0');
+        $ids = $accounts->pluck('id')->all();
+        if (empty($ids)) {
+            return [];
+        }
 
-        // Inbound transfers are negative on the source row, so subtract to add their absolute value.
-        $balance = bcadd((string) $account->starting_balance, $outgoing, 2);
-        $balance = bcsub($balance, $incomingTransfers, 2);
+        $outgoing = Transaction::whereIn('account_id', $ids)
+            ->groupBy('account_id')
+            ->selectRaw('account_id, SUM(amount) as total')
+            ->pluck('total', 'account_id');
 
-        return $balance;
+        $inbound = Transaction::whereIn('transfer_to_account_id', $ids)
+            ->groupBy('transfer_to_account_id')
+            ->selectRaw('transfer_to_account_id, SUM(amount) as total')
+            ->pluck('total', 'transfer_to_account_id');
+
+        $map = [];
+        foreach ($accounts as $account) {
+            $balance = bcadd((string) $account->starting_balance, (string) ($outgoing[$account->id] ?? '0'), 2);
+            // Inbound transfers are negative on the source row → subtract to add their absolute value.
+            $balance = bcsub($balance, (string) ($inbound[$account->id] ?? '0'), 2);
+            $map[$account->id] = $balance;
+        }
+
+        return $map;
     }
 
     public function create(): Response

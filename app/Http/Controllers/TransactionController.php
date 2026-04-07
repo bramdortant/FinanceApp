@@ -11,19 +11,25 @@ use Illuminate\Support\Facades\Redirect;
 
 class TransactionController extends Controller
 {
+    /**
+     * Income rows are stored positive; expense and transfer source rows are
+     * stored negative. Inbound transfers are derived (not duplicated) by
+     * AccountController::balanceMap() looking at transfer_to_account_id.
+     */
+    private function signedAmount(string $amount, string $type): string
+    {
+        if ($type === TransactionType::Expense->value || $type === TransactionType::Transfer->value) {
+            return bcmul($amount, '-1', 2);
+        }
+
+        return bcadd($amount, '0', 2);
+    }
+
     public function store(TransactionRequest $request, Account $account): RedirectResponse
     {
         $data = $request->validated();
         $type = $data['type'];
-
-        // Income/expense rows are stored signed: expense = negative, income = positive.
-        // Transfers are stored as a single source row (negative on the source account)
-        // with transfer_to_account_id pointing at the destination. The destination
-        // balance picks it up via the inbound-transfer query in AccountController.
-        $amount = (string) $data['amount'];
-        if ($type === TransactionType::Expense->value || $type === TransactionType::Transfer->value) {
-            $amount = bcmul($amount, '-1', 2);
-        }
+        $amount = $this->signedAmount((string) $data['amount'], $type);
 
         $account->transactions()->create([
             'date' => $data['date'],
@@ -45,11 +51,7 @@ class TransactionController extends Controller
     {
         $data = $request->validated();
         $type = $data['type'];
-
-        $amount = (string) $data['amount'];
-        if ($type === TransactionType::Expense->value || $type === TransactionType::Transfer->value) {
-            $amount = bcmul($amount, '-1', 2);
-        }
+        $amount = $this->signedAmount((string) $data['amount'], $type);
 
         $transaction->update([
             'date' => $data['date'],

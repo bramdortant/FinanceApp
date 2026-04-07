@@ -10,6 +10,12 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    // When set, the list is rendered from this account's perspective: inbound
+    // transfers show the source account name as the counterparty.
+    currentAccountId: {
+        type: Number,
+        default: null,
+    },
     emptyMessage: {
         type: String,
         default: 'Nog geen transacties.',
@@ -25,12 +31,20 @@ const formatCurrency = (amount) => {
     }).format(amount);
 };
 
+// Parse "YYYY-MM-DD" as a local-calendar date so it doesn't shift across
+// timezones the way `new Date('2026-04-07')` (parsed as UTC midnight) does.
+const parseLocalDate = (value) => {
+    if (!value) return new Date(NaN);
+    const [y, m, d] = value.split('T')[0].split('-').map(Number);
+    return new Date(y, m - 1, d);
+};
+
 const formatDate = (date) => {
     return new Intl.DateTimeFormat('nl-NL', {
         day: '2-digit',
         month: 'short',
         year: 'numeric',
-    }).format(new Date(date));
+    }).format(parseLocalDate(date));
 };
 
 const grouped = computed(() => {
@@ -72,7 +86,13 @@ const grouped = computed(() => {
                         </div>
                         <div class="truncate text-xs text-gray-500">
                             <template v-if="tx.type === 'transfer'">
-                                ⇄ {{ tx.transfer_to_account?.name || tx.account?.name }}
+                                ⇄
+                                <template v-if="currentAccountId && tx.transfer_to_account_id === currentAccountId">
+                                    {{ tx.account?.name }}
+                                </template>
+                                <template v-else>
+                                    {{ tx.transfer_to_account?.name || tx.account?.name }}
+                                </template>
                             </template>
                             <template v-else>
                                 {{ tx.category?.name || 'Geen categorie' }}

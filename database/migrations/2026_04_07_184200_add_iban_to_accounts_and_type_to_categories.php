@@ -82,5 +82,41 @@ return new class extends Migration
             $table->string('counterparty_name')->nullable()->change();
             $table->string('counterparty_iban')->nullable()->change();
         });
+
+        // Recreate the original triggers from create_transactions_table so
+        // rolling back this migration leaves the schema in its prior state.
+        DB::statement("
+            CREATE TRIGGER check_transaction_type_insert
+            BEFORE INSERT ON transactions
+            BEGIN
+                SELECT CASE
+                    WHEN NEW.type NOT IN ('income', 'expense', 'transfer')
+                    THEN RAISE(ABORT, 'type must be income, expense, or transfer')
+                END;
+                SELECT CASE
+                    WHEN NEW.type = 'transfer' AND NEW.transfer_to_account_id IS NULL
+                    THEN RAISE(ABORT, 'transfer transactions require transfer_to_account_id')
+                    WHEN NEW.type != 'transfer' AND NEW.transfer_to_account_id IS NOT NULL
+                    THEN RAISE(ABORT, 'only transfer transactions can have transfer_to_account_id')
+                END;
+            END;
+        ");
+
+        DB::statement("
+            CREATE TRIGGER check_transaction_type_update
+            BEFORE UPDATE ON transactions
+            BEGIN
+                SELECT CASE
+                    WHEN NEW.type NOT IN ('income', 'expense', 'transfer')
+                    THEN RAISE(ABORT, 'type must be income, expense, or transfer')
+                END;
+                SELECT CASE
+                    WHEN NEW.type = 'transfer' AND NEW.transfer_to_account_id IS NULL
+                    THEN RAISE(ABORT, 'transfer transactions require transfer_to_account_id')
+                    WHEN NEW.type != 'transfer' AND NEW.transfer_to_account_id IS NOT NULL
+                    THEN RAISE(ABORT, 'only transfer transactions can have transfer_to_account_id')
+                END;
+            END;
+        ");
     }
 };

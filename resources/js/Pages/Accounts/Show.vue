@@ -23,7 +23,13 @@ const flash = computed(() => usePage().props.flash);
 const formatCurrency = (amount) =>
     new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(amount);
 
-const today = () => new Date().toISOString().split('T')[0];
+// Use local date parts so the default doesn't shift across timezones
+// (toISOString() returns UTC, which yields the wrong calendar day near midnight).
+const today = () => {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
 
 // ----- Quick-add / edit modal -----
 const quickModalOpen = ref(false);
@@ -86,6 +92,14 @@ const closeQuick = () => {
 
 const handleEditTransaction = (tx) => {
     if (tx.type === 'transfer') {
+        // Inbound transfers belong to a different source account; editing them
+        // here from the destination's perspective would render the wrong "Van"
+        // and exclude the saved destination from the dropdown. Send the user
+        // to the source account's page instead.
+        if (tx.transfer_to_account_id === props.account.id) {
+            router.visit(route('accounts.show', tx.account_id));
+            return;
+        }
         openTransfer(tx);
     } else {
         openQuick(tx.type, tx);
@@ -251,7 +265,11 @@ watch(quickModalOpen, (open) => {
                 </div>
 
                 <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg">
-                    <TransactionList :transactions="transactions" @edit="handleEditTransaction" />
+                    <TransactionList
+                        :transactions="transactions"
+                        :current-account-id="account.id"
+                        @edit="handleEditTransaction"
+                    />
                 </div>
             </div>
         </div>

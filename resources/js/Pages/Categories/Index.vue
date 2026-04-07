@@ -114,7 +114,7 @@ const closeModal = () => {
                                         class="inline-block h-5 w-5 rounded-full border border-gray-200"
                                         :style="{ backgroundColor: category.color }"
                                         role="img"
-                                        :aria-label="`Categoriekleur ${category.color}`"
+                                        :aria-label="`Kleur van ${category.name}`"
                                     ></span>
                                 </td>
                                 <td class="whitespace-nowrap px-6 py-4 font-medium text-gray-900">
