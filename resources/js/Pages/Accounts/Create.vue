@@ -10,6 +10,7 @@ const form = useForm({
     name: '',
     type: 'checking',
     starting_balance: '0.00',
+    iban: '',
 });
 
 const submit = () => {
@@ -72,6 +73,22 @@ const submit = () => {
                                 required
                             />
                             <InputError class="mt-2" :message="form.errors.starting_balance" />
+                        </div>
+
+                        <div>
+                            <InputLabel for="iban" value="IBAN (optioneel)" />
+                            <TextInput
+                                id="iban"
+                                type="text"
+                                class="mt-1 block w-full"
+                                v-model="form.iban"
+                                maxlength="34"
+                                placeholder="NL00 RABO 0000 0000 00"
+                            />
+                            <InputError class="mt-2" :message="form.errors.iban" />
+                            <p class="mt-1 text-xs text-gray-500">
+                                Wordt versleuteld opgeslagen. Gebruikt voor automatische detectie van overboekingen tussen je eigen rekeningen.
+                            </p>
                         </div>
 
                         <div class="flex items-center gap-4">

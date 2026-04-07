@@ -19,6 +19,7 @@ const props = defineProps({
 
 const form = useForm({
     name: props.category.name,
+    type: props.category.type || 'expense',
     parent_id: props.category.parent_id,
     color: props.category.color || '#6B7280',
 });
@@ -53,6 +54,19 @@ const submit = () => {
                                 autofocus
                             />
                             <InputError class="mt-2" :message="form.errors.name" />
+                        </div>
+
+                        <div>
+                            <InputLabel for="type" value="Type" />
+                            <select
+                                id="type"
+                                v-model="form.type"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                            >
+                                <option value="expense">Uitgaven</option>
+                                <option value="income">Inkomsten</option>
+                            </select>
+                            <InputError class="mt-2" :message="form.errors.type" />
                         </div>
 
                         <div>

@@ -13,6 +13,8 @@ const props = defineProps({
     },
 });
 
+// Type and IBAN are intentionally locked after creation: changing them would
+// break balance calculations and transfer-detection assumptions.
 const form = useForm({
     name: props.account.name,
     type: props.account.type,
@@ -49,20 +51,6 @@ const submit = () => {
                                 autofocus
                             />
                             <InputError class="mt-2" :message="form.errors.name" />
-                        </div>
-
-                        <div>
-                            <InputLabel for="type" value="Type" />
-                            <select
-                                id="type"
-                                v-model="form.type"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                            >
-                                <option value="checking">Betaalrekening</option>
-                                <option value="savings">Spaarrekening</option>
-                                <option value="cash">Contant</option>
-                            </select>
-                            <InputError class="mt-2" :message="form.errors.type" />
                         </div>
 
                         <div>

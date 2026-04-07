@@ -6,12 +6,16 @@ import SecondaryButton from '@/Components/SecondaryButton.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
-defineProps({
+const props = defineProps({
     accounts: {
         type: Array,
         required: true,
     },
 });
+
+const totalBalance = computed(() =>
+    props.accounts.reduce((sum, a) => sum + parseFloat(a.current_balance || 0), 0)
+);
 
 const flash = computed(() => usePage().props.flash);
 
@@ -78,12 +82,14 @@ const accountTypeLabels = {
                 <div
                     v-if="flash?.success"
                     class="mb-4 rounded-md bg-green-50 p-4 text-sm text-green-700"
+                    role="alert"
                 >
                     {{ flash.success }}
                 </div>
                 <div
                     v-if="flash?.error"
                     class="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700"
+                    role="alert"
                 >
                     {{ flash.error }}
                 </div>
@@ -98,30 +104,43 @@ const accountTypeLabels = {
                 </div>
 
                 <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <Link
+                        :href="route('accounts.all')"
+                        class="overflow-hidden rounded-lg bg-indigo-600 text-white shadow-sm hover:bg-indigo-700"
+                    >
+                        <div class="p-6">
+                            <h3 class="text-lg font-semibold">Alle rekeningen</h3>
+                            <p class="mt-1 text-xs text-indigo-100">Overzicht van alle transacties</p>
+                            <p class="mt-4 text-2xl font-bold">{{ formatCurrency(totalBalance) }}</p>
+                        </div>
+                    </Link>
+
                     <div
                         v-for="account in accounts"
                         :key="account.id"
                         class="overflow-hidden rounded-lg bg-white shadow-sm"
                     >
                         <div class="p-6">
-                            <div class="flex items-start justify-between">
-                                <div>
-                                    <h3 class="text-lg font-semibold text-gray-900">
-                                        {{ account.name }}
-                                    </h3>
-                                    <span class="mt-1 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-                                        {{ accountTypeLabels[account.type] || account.type }}
-                                    </span>
+                            <Link :href="route('accounts.show', account.id)" class="block">
+                                <div class="flex items-start justify-between">
+                                    <div>
+                                        <h3 class="text-lg font-semibold text-gray-900">
+                                            {{ account.name }}
+                                        </h3>
+                                        <span class="mt-1 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                                            {{ accountTypeLabels[account.type] || account.type }}
+                                        </span>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="text-lg font-bold" :class="parseFloat(account.current_balance) >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            {{ formatCurrency(account.current_balance) }}
+                                        </p>
+                                        <p class="text-xs text-gray-400">
+                                            Beginsaldo: {{ formatCurrency(account.starting_balance) }}
+                                        </p>
+                                    </div>
                                 </div>
-                                <div class="text-right">
-                                    <p class="text-lg font-bold" :class="parseFloat(account.current_balance) >= 0 ? 'text-green-600' : 'text-red-600'">
-                                        {{ formatCurrency(account.current_balance) }}
-                                    </p>
-                                    <p class="text-xs text-gray-400">
-                                        Beginsaldo: {{ formatCurrency(account.starting_balance) }}
-                                    </p>
-                                </div>
-                            </div>
+                            </Link>
                             <div class="mt-4 flex justify-end gap-2">
                                 <Link
                                     :href="route('accounts.edit', account.id)"

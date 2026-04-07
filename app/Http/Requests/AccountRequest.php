@@ -17,6 +17,7 @@ class AccountRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'type' => ['required', 'string', 'in:checking,savings,cash'],
             'starting_balance' => ['required', 'numeric', 'decimal:0,2', 'min:-9999999.99', 'max:9999999.99'],
+            'iban' => ['nullable', 'string', 'max:34'],
         ];
     }
 }
