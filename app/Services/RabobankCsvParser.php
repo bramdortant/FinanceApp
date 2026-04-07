@@ -107,6 +107,12 @@ class RabobankCsvParser
 
                 $saldo = $get('Saldo na trn');
 
+                $date = $get('Datum');
+                $parsedDate = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+                if ($date === '' || $parsedDate === false || $parsedDate->format('Y-m-d') !== $date) {
+                    throw new RuntimeException("Ongeldige Datum op regel {$lineNumber}.");
+                }
+
                 $desc = $this->joinDescriptions(
                     $get('Omschrijving-1'),
                     $get('Omschrijving-2'),
@@ -114,7 +120,7 @@ class RabobankCsvParser
                 );
 
                 $grouped[$iban][] = [
-                    'date' => $get('Datum'),
+                    'date' => $date,
                     'amount' => $this->normalizeAmount($bedrag),
                     'balance_after' => $saldo === '' ? null : $this->normalizeAmount($saldo),
                     'counterparty_iban' => $get('Tegenrekening IBAN/BBAN') ?: null,
