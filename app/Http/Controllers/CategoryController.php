@@ -53,6 +53,16 @@ class CategoryController extends Controller
 
     public function update(CategoryRequest $request, Category $category): RedirectResponse
     {
+        // Prevent changing income/expense type when transactions already exist —
+        // it would leave them with a category whose type no longer matches.
+        if (
+            $category->type !== $request->validated('type')
+            && $category->transactions()->exists()
+        ) {
+            return Redirect::back()
+                ->withErrors(['type' => 'Kan het type niet wijzigen zolang er transacties aan deze categorie gekoppeld zijn.']);
+        }
+
         $category->update($request->validated());
 
         return Redirect::route('categories.index')
