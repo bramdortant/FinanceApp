@@ -16,6 +16,7 @@ class CategoryRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
+            'type' => ['required', 'string', 'in:income,expense'],
             'parent_id' => ['nullable', 'exists:categories,id', function ($attribute, $value, $fail) {
                 if ($value === null) {
                     return;

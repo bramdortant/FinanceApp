@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\TransactionType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -30,6 +31,9 @@ class Transaction extends Model
         'date' => 'date',
         'amount' => 'decimal:2',
         'balance_after' => 'decimal:2',
+        'type' => TransactionType::class,
+        'counterparty_name' => 'encrypted',
+        'counterparty_iban' => 'encrypted',
     ];
 
     public function account(): BelongsTo

@@ -65,12 +65,14 @@ const closeModal = () => {
                 <div
                     v-if="flash?.success"
                     class="mb-4 rounded-md bg-green-50 p-4 text-sm text-green-700"
+                    role="alert"
                 >
                     {{ flash.success }}
                 </div>
                 <div
                     v-if="flash?.error"
                     class="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700"
+                    role="alert"
                 >
                     {{ flash.error }}
                 </div>
@@ -111,6 +113,8 @@ const closeModal = () => {
                                     <span
                                         class="inline-block h-5 w-5 rounded-full border border-gray-200"
                                         :style="{ backgroundColor: category.color }"
+                                        role="img"
+                                        :aria-label="`Kleur van ${category.name}`"
                                     ></span>
                                 </td>
                                 <td class="whitespace-nowrap px-6 py-4 font-medium text-gray-900">

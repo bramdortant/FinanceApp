@@ -232,7 +232,7 @@ hostname -I
 ```
 
 Note: Your laptop must be running for local access. Once we deploy to
-Oracle Cloud (Phase 10), the app runs 24/7 independently.
+Oracle Cloud (Phase 11), the app runs 24/7 independently.
 
 ---
 
@@ -259,9 +259,9 @@ Two long-lived branches:
 Both branches are protected: no direct pushes, no deletion. All changes
 go through PRs with CodeRabbit review.
 
-**Note**: During early development (before Phase 10 deployment), we use
+**Note**: During early development (before Phase 11 deployment), we use
 `main` as the single branch. The `development` + `production` split
-happens in Phase 10 when we actually deploy.
+happens in Phase 11 when we actually deploy.
 
 ### PR workflow
 
@@ -397,31 +397,178 @@ description, Docker setup instructions, and how to run migrations.
 
 **Deliverable**: You can manage your accounts and spending categories.
 
-### Phase 3: Manual Transaction Entry + Transfers
+### Phase 3: Account-Centric Transaction UX
 
 **Branch**: `feature/transactions`
 
-- **Transaction form**: Account selector, date, description, amount,
-  income/expense toggle, category dropdown, optional notes
-- **Transfer form**: From account, to account, amount, date, notes
-  (this creates a transfer-type transaction — not counted as spending)
-- **Transaction list page**: See all transactions, sorted by date,
-  filterable by account
-- **Edit/delete transactions**
-- **Account balance display**: Each account shows its current balance
-  (starting balance + all transactions)
-- **TransactionType enum**: Add a PHP 8.1+ backed enum for the type
-  field (income/expense/transfer) — gives IDE autocompletion and type
-  safety when building transaction forms
+This phase introduces the **account-centric UX** that becomes the heart
+of the app. Manual transaction entry is intentionally a *secondary* path
+(most transactions will come from CSV import in Phase 4), but it needs
+to be **fast and intuitive** for cash, corrections, and edge cases.
+
+#### Design philosophy
+
+- **Account is the home screen**: You click an account, you're "in" it.
+  Everything you do there — add, transfer, view — is implicit to that
+  account. No repeated account selection.
+- **Minimal manual actions**: Big +/− buttons, keyboard-first modals,
+  smart defaults, clone existing transactions to skip typing.
+- **Designed for future expansion**: The transaction list and quick-add
+  modal are built as reusable components so Phase 5 (categorization
+  workflow), Phase 7 (dashboard records list with sort/group), and
+  Phase 8 (transaction splitting) can extend them without rewrites.
+
+#### Carryover items from Phase 2 (discovered during Phase 3 design)
+
+These came out of the design evolution and live in Phase 3 because
+they're prerequisites for the new UX:
+
+- **Account `show` route**: Re-add the `show` route to the accounts
+  resource (excluded in Phase 2). The account detail page becomes the
+  primary navigation target.
+- **`accounts.iban` field**: Add a nullable `iban` column to accounts
+  via migration. Required as preparation for Phase 4 transfer detection.
+  Use Laravel's `encrypted` cast (see Encryption section below).
+- **`categories.type` field**: Add a `type` enum column (`income` /
+  `expense`) to categories. Income and expense categories are kept
+  separate because they don't overlap (Salary is never an expense,
+  Boodschappen is never income). Defaults to `expense`.
+
+#### Account index — the launch pad
+
+The Rekeningen page becomes the home screen of the app:
+
+- One card per account (current balance, name, type)
+- An **"Alle rekeningen"** card at the top showing the combined total
+  across all accounts (read-only — clicking it goes to a combined
+  transaction view, no add buttons)
+- Clicking an account card → navigates to that account's show page
+
+#### Account show page — the center of gravity
+
+Layout:
+
+- **Header**: account name, current balance (large), starting balance
+  (small, secondary)
+- **Action row** (right under header): four buttons
+  - Green **"+ Inkomsten"** — opens quick-add modal in income mode
+  - Red **"− Uitgaven"** — opens quick-add modal in expense mode
+  - **"⇄ Overboeken"** — opens transfer modal
+  - **"📋 Klonen"** — opens clone picker
+- **Transaction list**: all transactions for this account, newest first.
+  Built as a reusable `TransactionList.vue` component.
+- **Edit / delete account**: small icons in a corner of the header.
+  Edit only allows changing `name` and `starting_balance`. The `type`
+  field is locked after creation to prevent confusion. Delete only
+  works when no transactions exist (already enforced from Phase 2).
+
+#### Quick-add modal (the +/− buttons)
+
+The fastest possible manual entry path:
+
+- Opens with **amount field auto-focused** so you can immediately type
+- Fields visible by default: Amount, Description, Category (filtered to
+  income or expense based on which button you clicked), Date (defaults
+  to today)
+- Income vs expense is implicit from the button — no toggle in the form
+- **Enter submits**, Escape cancels — never need the mouse for cash entry
+- Category dropdown is built as a reusable component so Phase 5 can add
+  smart auto-selection (description-to-category memory) and Phase 5/6
+  can add numeric keyboard shortcuts (1/2/3 to pick) without rewriting it
+
+#### Clone modal (the 📋 button)
+
+Searchable picker for one-tap repeat entries:
+
+- Opens with **search box auto-focused**
+- Below: list of past transactions, **newest first**, each row showing
+  description + amount + category color dot + relative date
+  ("2 dagen geleden")
+- **Arrow keys** navigate the list, **Enter** picks
+- Picking a transaction → opens the quick-add modal pre-filled with that
+  transaction's description and category, amount field auto-focused so
+  you can immediately overwrite it
+- Common case (clone the most recent): one click + Enter + new amount + Enter
+
+#### Transfer modal (the ⇄ button)
+
+- Layout: `[Huidige rekening] ⇄ [Andere rekening ▼]`
+- The ⇄ button swaps which side is source vs destination
+- Fields: amount, date, optional notes
+- No category, no type selector — transfers are always type=transfer
+- Saves as a single transfer-type transaction with `transfer_to_account_id`
+
+#### Alle rekeningen view
+
+Read-only combined transaction list across all accounts. Phase 3
+implementation is intentionally minimal:
+
+- Reuses the `TransactionList.vue` component
+- No add/transfer buttons (you'd need to pick an account first, which
+  defeats the purpose)
+- Real dashboard features (totals per week/month/year, average-based
+  budget hints, sort/group by date or category) → **Phase 7**, not now
+
+#### Encryption of sensitive financial data
+
+Since we're handling financial data on a self-hosted server, we encrypt
+the high-sensitivity fields at rest using Laravel's `encrypted` cast
+(AES-256, keyed off `APP_KEY`).
+
+**What gets encrypted:**
+
+- `accounts.iban` (Phase 3)
+- `transactions.counterparty_iban` (Phase 4)
+- `transactions.counterparty_name` (Phase 4)
+
+**What stays plaintext:**
+
+- Amounts, dates, descriptions, categories, account names, transaction
+  types — operational data we need to query and aggregate. Encrypting
+  these would break filtering, sorting, and dashboard aggregations.
+
+**Trade-offs you should know about:**
+
+- We can't `WHERE iban = '...'` in SQL — comparisons happen in PHP code
+  after loading. Fine for personal-app data volumes.
+- **Losing `APP_KEY` means losing all encrypted data forever.** Phase 10
+  (Security Audit) documents the backup procedure and Phase 11
+  (Deployment) includes the step of actually backing it up separately
+  from the database.
+- Encryption defends against database file leaks, backup leaks, and
+  cloud provider snooping. It does NOT defend against full server
+  compromise — but no app-level encryption can.
+
+#### Other Phase 3 deliverables
+
+- **TransactionType enum**: PHP 8.1+ backed enum for the `type` field
+  (`income`, `expense`, `transfer`) — IDE autocompletion and type safety
+- **TransactionController**: full resource controller with `index`,
+  `create`, `store`, `edit`, `update`, `destroy`. The `index` is
+  account-scoped (nested route).
+- **Routing**: nested resource routes —
+  `/accounts/{account}/transactions/...` for account-scoped actions
+- **TransactionRequest** form request with validation including:
+  account_id exists, amount precision, type in enum, transfer
+  consistency rules (transfer_to_account_id required when type=transfer
+  and must differ from account_id)
+- **Splitting-aware list design**: `TransactionList.vue` is built to
+  show split transactions later (parent row + indented sub-rows) even
+  though splitting itself lands in Phase 8
 
 **Accessibility pass**: Add ARIA attributes across all existing and new
 UI components (`role="alert"` on flash messages, `aria-label` on color
-swatches, semantic landmarks). Deferred from Phase 2 to do a single
-comprehensive pass once more UI exists.
+swatches, semantic landmarks, modal focus traps, keyboard navigation).
+Deferred from Phase 2 to do a single comprehensive pass once more UI
+exists.
 
-**README update**: Add manual transaction entry and transfer usage.
+**README update**: Add account-centric workflow, transaction entry,
+transfer usage, and a note about IBAN encryption (for transparency).
 
-**Deliverable**: You can add transactions, make transfers, and see balances.
+**Deliverable**: A fast, intuitive, account-centric experience for
+viewing accounts, entering transactions (cash/manual), cloning past
+entries, and making transfers — all designed to extend cleanly into
+Phase 4 (CSV import) and beyond.
 
 ### Phase 4: CSV Import
 
@@ -433,6 +580,16 @@ comprehensive pass once more UI exists.
 - **Column mapping**: Match CSV columns to our fields (date, description,
   amount, counterparty_name, counterparty_iban, balance_after,
   transaction_code) — Dutch bank formats vary, so this step is important
+- **Automatic transfer detection** (uses Phase 3's IBAN field): When
+  parsing a row, check if the counterparty IBAN matches another account
+  the user owns in this system. If yes, create a transfer-type
+  transaction instead of a regular expense/income. When the matching
+  CSV (the other side of the transfer) is later imported, detect the
+  duplicate (matching amount + date + IBAN, opposite direction) and
+  skip it. This handles real-world cases like:
+  - Auto-transfer rules ("if checking > 3k EUR, move overflow to savings")
+  - Recurring scheduled transfers (e.g. fixed amount to a stocks account)
+  - Manual one-off transfers between own accounts
 - **Rabobank-specific**: Map Naam tegenpartij → counterparty_name,
   Tegenrekening IBAN → counterparty_iban, Saldo na trn → balance_after,
   Code → transaction_code. Concatenate Omschrijving 1/2/3 into
@@ -700,7 +857,194 @@ analytical layers on top of that existing data model.
 
 **Deliverable**: Visual hierarchy for categories and grouped insights.
 
-### Phase 10: Polish and Deployment
+### Phase 9b: UI/UX Polish — Desktop & Mobile
+
+**Branch**: `feature/ui-polish`
+
+The earlier phases focused on building functionality fast. This phase is
+explicitly about making the app look and feel good — and especially about
+making the mobile experience first-class, since day-to-day use (quick-add
+of a coffee, checking a balance) will mostly happen on the phone, while
+heavier flows like CSV import stay on the desktop.
+
+**Investigate first** (no code yet — produce a short notes file in `docs/`):
+
+- Walk every page on desktop and on a real phone (or devtools mobile emulation).
+  Capture screenshots, list everything that feels clunky, cramped, or ugly.
+- Decide per page whether the mobile UX should mirror the desktop layout
+  or diverge. Examples to think through:
+  - Account show page: action buttons should be large thumb-targets at the
+    bottom of the screen on mobile, not a 4-column grid up top.
+  - Transaction list: maybe swipe-to-edit/delete on mobile vs click on desktop.
+  - Modals: full-screen sheets on mobile vs centred dialogs on desktop.
+  - Navigation: bottom tab bar on mobile vs top nav on desktop.
+- Identify which flows are desktop-only (CSV import, bulk categorisation,
+  category management) and which are mobile-primary (quick-add, balance check,
+  recent activity).
+- Pick a small visual language to commit to: spacing scale, typography, colour
+  accents, button hierarchy, empty-state illustrations.
+- **Suggestion to evaluate**: replace the current category colour swatch with a
+  Font Awesome (or similar) icon per category, tinted with the category's hex
+  colour. Would need a `categories.icon` column, an icon picker in the category
+  create/edit forms, and updates anywhere a category is rendered (transaction
+  list, quick-add modal, categories index). Decide during the investigation
+  whether this is worth the scope.
+
+**Then implement**:
+
+- Apply the visual language consistently across every existing page.
+- Build the mobile-specific layouts/components identified in the investigation
+  (responsive breakpoints, conditional components, or genuinely separate views
+  where the UX diverges enough).
+- Add a PWA manifest + install prompt so the phone version feels like an app
+  (this overlaps with Phase 11 — pull it forward if it helps mobile testing).
+- Re-run the accessibility pass against any new components.
+
+**Deliverable**: An app that looks intentional rather than scaffolded, with
+a phone experience that's actually pleasant for the daily-use flows.
+
+> Note: We deliberately keep re-evaluating each phase as we go. If by the
+> time we reach this phase we've already polished things incrementally, the
+> scope here can shrink — or vice versa, if more issues have piled up, the
+> scope can grow. Update this section before starting the phase.
+
+### Phase 10: Security Audit
+
+**Branch**: `feature/security-audit`
+
+Before deploying anything to a public server, do a comprehensive
+security review. We're handling financial data (IBANs, transactions,
+counterparty information) so the bar is higher than a typical hobby
+project. This phase is **research + verification + fixes**, not new
+features. The output is a security audit report saved in `docs/` plus
+all fixes applied.
+
+#### Dependency vulnerability scan
+
+- Run `composer audit` for PHP dependencies — review and address any
+  reported CVEs
+- Run `npm audit` for JavaScript dependencies — same
+- Update or replace any package with known vulnerabilities
+- Document any accepted risks (with reasoning) in the audit report
+
+#### Static analysis
+
+- Set up **Larastan / PHPStan** at a strict level and resolve all
+  findings (or document accepted exceptions)
+- Set up **ESLint** with security plugins for the Vue/JS side
+- Optionally try **Psalm** for additional PHP analysis
+- These tools catch entire classes of bugs (null dereferences, type
+  confusion, dead code) that humans miss
+
+#### OWASP Top 10 walkthrough
+
+Manually review the codebase against the OWASP Top 10 (2021), focusing
+on:
+
+- **A01 Broken Access Control**: Every route and controller method —
+  is the right authorization in place? (Single-user app makes this
+  simpler, but we still need `auth` middleware everywhere.)
+- **A02 Cryptographic Failures**: Verify the `encrypted` casts on
+  `accounts.iban`, `transactions.counterparty_iban`,
+  `transactions.counterparty_name`. Verify `APP_KEY` is set, strong,
+  and not committed.
+- **A03 Injection**: Audit any raw SQL (`DB::raw`, `DB::statement`)
+  and any `eval`-like patterns. Verify all user input goes through
+  Form Requests.
+- **A04 Insecure Design**: Review the AI categorization design (already
+  hardened in Phase 6) and the CSV import (file upload safety, file
+  type validation, max size limits).
+- **A05 Security Misconfiguration**: `APP_DEBUG=false` in production,
+  error pages don't leak stack traces, default Laravel routes
+  (`/telescope`, `/horizon` etc.) are disabled or protected, version
+  headers stripped.
+- **A06 Vulnerable & Outdated Components**: Same as the dependency
+  scan above — but also check that PHP and Node base images in the
+  Dockerfile are recent.
+- **A07 Identification & Auth Failures**: Password requirements,
+  session timeout, login rate limiting, brute-force protection.
+- **A08 Software & Data Integrity Failures**: Verify Composer and NPM
+  use lock files (we already do). Verify no unsigned third-party
+  scripts loaded at runtime.
+- **A09 Logging & Monitoring Failures**: Make sure logs don't contain
+  sensitive data (no full transaction objects, no IBANs, no plaintext
+  decrypted values). Set up basic error logging.
+- **A10 SSRF**: Review any code that makes outbound HTTP requests
+  (the OpenAI API call in Phase 6) — make sure URLs are not user-
+  controlled.
+
+#### Laravel-specific best practices review
+
+- Mass assignment: every Model has explicit `$fillable` (or
+  `$guarded`)
+- Form Requests: every controller mutation method uses one
+- Eloquent relationships: no N+1 queries on hot paths (use
+  `withCount`, `with`, `load`)
+- File uploads (CSV import): MIME type checked, file size limited,
+  stored outside web root
+- Cookies: `Secure`, `HttpOnly`, `SameSite=Strict` flags
+- CSRF protection: enabled (Laravel default), verify it's not
+  bypassed anywhere
+- Content Security Policy (CSP) headers configured
+
+#### Configuration audit
+
+- `APP_DEBUG=false` in production `.env`
+- `APP_ENV=production` in production `.env`
+- HTTPS enforced (force https middleware or web server config)
+- `SESSION_SECURE_COOKIE=true` in production
+- `SESSION_SAME_SITE=strict`
+- Production error pages (`resources/views/errors/`) don't leak info
+- All cron/queue jobs run as non-root
+
+#### Database & encryption verification
+
+- All sensitive fields have the `encrypted` cast applied
+- `APP_KEY` is strong (Laravel generates 32-byte base64 by default)
+- Verify SQLite file permissions are restrictive (not world-readable)
+- Check that backups don't accidentally include `.env` alongside the
+  database
+
+#### Backup & recovery procedures
+
+- Document backup procedure for SQLite database
+- Document **separate** backup procedure for `APP_KEY` (store in
+  password manager) — without this, encrypted fields are unrecoverable
+- Test the restore procedure end-to-end at least once
+- Document the recovery runbook in `docs/`
+
+#### Testing gaps
+
+- Add automated tests for the security-critical paths:
+  - Auth required on every route
+  - Form Request validation on every mutation endpoint
+  - Encryption casts working as expected (write/read round-trip)
+  - Authorization (even though single-user, should be verified)
+- Aim for tests on the *risky* code, not 100% coverage
+
+#### Refactoring opportunities
+
+- Look for code that should be in services instead of controllers
+- Look for duplicated logic that should be extracted
+- Look for missing validation at boundaries
+- Anything that smells off — fix it before going public
+
+#### Output
+
+A security audit report (`docs/security-audit.md`) listing:
+
+- Every category of check performed
+- Findings (severity, description, fix applied or accepted risk)
+- Open items / known limitations
+- Backup & recovery runbook
+
+**README update**: Add a section about security measures (encryption,
+backup procedure, security audit reference).
+
+**Deliverable**: A documented, audited, hardened codebase ready for
+public deployment.
+
+### Phase 11: Polish and Deployment
 
 **Branch**: `feature/deployment`
 
@@ -712,7 +1056,7 @@ analytical layers on top of that existing data model.
 - **Phone home screen**: Add PWA manifest so it can be "installed" on
   your phone home screen
 - **Basic security**: Rate limiting, CSRF protection (Laravel has this
-  by default), auth required
+  by default), auth required (most security work was done in Phase 10)
 - **Update admin credentials**: Change the seeded user email and
   password from the development defaults (<admin@financeapp.local> /
   password) to real credentials before deploying. Also remove the
@@ -728,6 +1072,9 @@ analytical layers on top of that existing data model.
 - **Branch split**: Rename `main` to `development`, create
   `production` branch. Set up GitHub branch protection rules on
   both — prevent deletion, no direct pushes, require PR reviews
+- **Backup `APP_KEY` to password manager** (separate from database
+  backup) — without this, encrypted fields are unrecoverable. Phase 10
+  audit will have already documented the procedure.
 
 **README update**: Add deployment instructions, production URL, and
 final feature list.

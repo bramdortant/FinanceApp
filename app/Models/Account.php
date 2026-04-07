@@ -12,11 +12,13 @@ class Account extends Model
         'type',
         'starting_balance',
         'currency',
+        'iban',
         'icon',
     ];
 
     protected $casts = [
         'starting_balance' => 'decimal:2',
+        'iban' => 'encrypted',
     ];
 
     public function transactions(): HasMany
