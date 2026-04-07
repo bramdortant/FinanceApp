@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Account;
 use App\Services\CsvImportService;
 use App\Services\RabobankCsvParser;
 use Illuminate\Http\RedirectResponse;
@@ -29,13 +28,11 @@ class CsvImportController extends Controller
     }
 
     /**
-     * Step 2: parse the uploaded file, detect the account, build a preview.
-     *
-     * The file is stashed in private storage under a random token. The
-     * preview page submits that token to `store()` for the actual commit,
-     * so we don't need to keep the parsed rows in the session.
+     * Step 2 (POST): stash the uploaded file under a random token and
+     * redirect to the GET preview route. Following the Post-Redirect-Get
+     * pattern so refresh/back/bookmark work on the preview page.
      */
-    public function preview(Request $request): Response|RedirectResponse
+    public function upload(Request $request): RedirectResponse
     {
         $request->validate([
             'csv' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
@@ -44,12 +41,35 @@ class CsvImportController extends Controller
         $file = $request->file('csv');
         $token = Str::random(40);
         $stashPath = "csv-imports/{$token}.csv";
+        $metaPath = "csv-imports/{$token}.json";
+
         Storage::put($stashPath, file_get_contents($file->getRealPath()));
+        Storage::put($metaPath, json_encode([
+            'original_filename' => $file->getClientOriginalName(),
+        ]));
+
+        return Redirect::route('csv-imports.preview', ['token' => $token]);
+    }
+
+    /**
+     * Step 3 (GET): parse the stashed file, detect accounts, render preview.
+     */
+    public function preview(string $token): Response|RedirectResponse
+    {
+        $stashPath = "csv-imports/{$token}.csv";
+        $metaPath = "csv-imports/{$token}.json";
+
+        if (! Storage::exists($stashPath) || ! Storage::exists($metaPath)) {
+            return Redirect::route('csv-imports.create')
+                ->withErrors(['csv' => 'Upload is verlopen. Upload het bestand opnieuw.']);
+        }
+
+        $meta = json_decode(Storage::get($metaPath), true);
 
         try {
             $grouped = $this->parser->parse(Storage::path($stashPath));
         } catch (\RuntimeException $e) {
-            Storage::delete($stashPath);
+            Storage::delete([$stashPath, $metaPath]);
 
             return Redirect::route('csv-imports.create')
                 ->withErrors(['csv' => $e->getMessage()]);
@@ -75,7 +95,7 @@ class CsvImportController extends Controller
         }
 
         if (! empty($missing)) {
-            Storage::delete($stashPath);
+            Storage::delete([$stashPath, $metaPath]);
 
             return Redirect::route('csv-imports.create')->withErrors([
                 'csv' => 'Geen rekening gevonden voor IBAN: '.implode(', ', $missing).'. Maak deze eerst aan.',
@@ -84,28 +104,32 @@ class CsvImportController extends Controller
 
         return Inertia::render('CsvImports/Preview', [
             'token' => $token,
-            'originalFilename' => $file->getClientOriginalName(),
+            'originalFilename' => $meta['original_filename'] ?? 'import.csv',
             'sections' => $sections,
         ]);
     }
 
     /**
-     * Step 3: commit the import. Re-parses the stashed file so we trust
-     * the server-side data, not whatever the frontend sends back.
+     * Step 4 (POST): commit the import. Re-parses the stashed file so we
+     * trust the server-side data, not whatever the frontend sends back.
      */
     public function store(Request $request): RedirectResponse
     {
         $request->validate([
             'token' => ['required', 'string', 'size:40'],
-            'original_filename' => ['required', 'string', 'max:255'],
         ]);
 
-        $stashPath = "csv-imports/{$request->string('token')}.csv";
+        $token = $request->string('token')->toString();
+        $stashPath = "csv-imports/{$token}.csv";
+        $metaPath = "csv-imports/{$token}.json";
 
-        if (! Storage::exists($stashPath)) {
+        if (! Storage::exists($stashPath) || ! Storage::exists($metaPath)) {
             return Redirect::route('csv-imports.create')
                 ->withErrors(['csv' => 'Upload is verlopen. Upload het bestand opnieuw.']);
         }
+
+        $meta = json_decode(Storage::get($metaPath), true);
+        $originalFilename = $meta['original_filename'] ?? 'import.csv';
 
         try {
             $grouped = $this->parser->parse(Storage::path($stashPath));
@@ -124,7 +148,7 @@ class CsvImportController extends Controller
                 $import = $this->service->commit(
                     $preview['rows'],
                     $account,
-                    $request->string('original_filename')->toString(),
+                    $originalFilename,
                 );
 
                 $totalNew += $import->imported_count;
@@ -132,7 +156,7 @@ class CsvImportController extends Controller
                 $firstAccountId ??= $account->id;
             }
         } finally {
-            Storage::delete($stashPath);
+            Storage::delete([$stashPath, $metaPath]);
         }
 
         return Redirect::route('accounts.show', $firstAccountId)->with(

@@ -100,10 +100,17 @@ class RabobankCsvParser
                     );
                 }
 
+                $bedrag = $get('Bedrag');
+                if ($bedrag === '') {
+                    throw new RuntimeException("Lege Bedrag op regel {$lineNumber}.");
+                }
+
+                $saldo = $get('Saldo na trn');
+
                 $grouped[$iban][] = [
                     'date' => $get('Datum'),
-                    'amount' => $this->normalizeAmount($get('Bedrag')),
-                    'balance_after' => $this->normalizeAmount($get('Saldo na trn')),
+                    'amount' => $this->normalizeAmount($bedrag),
+                    'balance_after' => $saldo === '' ? null : $this->normalizeAmount($saldo),
                     'counterparty_iban' => $get('Tegenrekening IBAN/BBAN') ?: null,
                     'counterparty_name' => $get('Naam tegenpartij') ?: null,
                     'transaction_code' => $get('Code') ?: null,

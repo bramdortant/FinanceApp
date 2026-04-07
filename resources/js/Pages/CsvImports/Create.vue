@@ -10,28 +10,34 @@ const form = useForm({
 });
 
 const isDragging = ref(false);
-const fileInput = ref(null);
 
-const submit = () => {
-    form.post(route('csv-imports.preview'), {
-        forceFormData: true,
-    });
-};
-
-const onFile = (event) => {
-    form.csv = event.target.files[0] ?? null;
-};
-
-const onDrop = (event) => {
-    isDragging.value = false;
-    const file = event.dataTransfer.files?.[0];
-    if (!file) return;
+const validateAndSet = (file) => {
+    if (!file) {
+        form.csv = null;
+        return;
+    }
     if (!/\.csv$/i.test(file.name)) {
+        form.csv = null;
         form.errors.csv = 'Alleen .csv bestanden worden ondersteund.';
         return;
     }
     form.csv = file;
     form.errors.csv = null;
+};
+
+const submit = () => {
+    form.post(route('csv-imports.upload'), {
+        forceFormData: true,
+    });
+};
+
+const onFile = (event) => {
+    validateAndSet(event.target.files[0] ?? null);
+};
+
+const onDrop = (event) => {
+    isDragging.value = false;
+    validateAndSet(event.dataTransfer.files?.[0] ?? null);
 };
 </script>
 
@@ -55,10 +61,10 @@ const onDrop = (event) => {
                     </p>
 
                     <form @submit.prevent="submit">
-                        <div
-                            class="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-12 text-center transition"
+                        <label
+                            for="csv-input"
+                            class="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-12 text-center transition focus-within:ring-2 focus-within:ring-indigo-500"
                             :class="isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'"
-                            @click="fileInput.click()"
                             @dragover.prevent="isDragging = true"
                             @dragleave.prevent="isDragging = false"
                             @drop.prevent="onDrop"
@@ -74,13 +80,13 @@ const onDrop = (event) => {
                             </p>
                             <p class="mt-1 text-xs text-gray-500">Rabobank CSV, max 5 MB</p>
                             <input
-                                ref="fileInput"
+                                id="csv-input"
                                 type="file"
                                 accept=".csv,text/csv"
-                                class="hidden"
+                                class="sr-only"
                                 @change="onFile"
                             />
-                        </div>
+                        </label>
                         <InputError :message="form.errors.csv" class="mt-2" />
 
                         <div class="mt-6 flex justify-end">
