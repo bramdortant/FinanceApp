@@ -887,6 +887,11 @@ heavier flows like CSV import stay on the desktop.
   recent activity).
 - Pick a small visual language to commit to: spacing scale, typography, colour
   accents, button hierarchy, empty-state illustrations.
+- **Nice-to-have from Phase 4a**: race-condition-safe duplicate protection.
+  Add a unique constraint on `transactions(account_id, csv_import_hash)` and
+  switch the import insert path to insert-ignore / upsert semantics. Not
+  needed for the current single-user setup (no concurrent imports), but a
+  cheap safety net if the app ever runs queued imports.
 - **Nice-to-have from Phase 4a**: watch-folder CSV import. Drop a Rabobank
   CSV into a designated folder and have it imported automatically. Simplest
   route: a Laravel scheduled command (hourly cron) scans an inbox folder,
