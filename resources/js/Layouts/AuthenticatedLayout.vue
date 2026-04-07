@@ -51,6 +51,12 @@ const showingNavigationDropdown = ref(false);
                                 >
                                     Categorieën
                                 </NavLink>
+                                <NavLink
+                                    :href="route('csv-imports.create')"
+                                    :active="route().current('csv-imports.*')"
+                                >
+                                    Importeren
+                                </NavLink>
                             </div>
                         </div>
 
@@ -169,6 +175,12 @@ const showingNavigationDropdown = ref(false);
                             :active="route().current('categories.*')"
                         >
                             Categorieën
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('csv-imports.create')"
+                            :active="route().current('csv-imports.*')"
+                        >
+                            Importeren
                         </ResponsiveNavLink>
                     </div>
 
