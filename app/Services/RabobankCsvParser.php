@@ -63,7 +63,7 @@ class RabobankCsvParser
 
             // Strip a possible UTF-8 BOM from the first header so the
             // header lookup below still matches "IBAN/BBAN" exactly.
-            $headers[0] = preg_replace('/^\xEF\xBB\xBF/', '', $headers[0]);
+            $headers[0] = preg_replace('/^\xEF\xBB\xBF/', '', $headers[0] ?? '') ?? '';
 
             $missing = array_diff(self::REQUIRED_HEADERS, $headers);
             if (! empty($missing)) {
@@ -107,6 +107,12 @@ class RabobankCsvParser
 
                 $saldo = $get('Saldo na trn');
 
+                $desc = $this->joinDescriptions(
+                    $get('Omschrijving-1'),
+                    $get('Omschrijving-2'),
+                    $get('Omschrijving-3'),
+                );
+
                 $grouped[$iban][] = [
                     'date' => $get('Datum'),
                     'amount' => $this->normalizeAmount($bedrag),
@@ -114,16 +120,8 @@ class RabobankCsvParser
                     'counterparty_iban' => $get('Tegenrekening IBAN/BBAN') ?: null,
                     'counterparty_name' => $get('Naam tegenpartij') ?: null,
                     'transaction_code' => $get('Code') ?: null,
-                    'description' => $this->joinDescriptions(
-                        $get('Omschrijving-1'),
-                        $get('Omschrijving-2'),
-                        $get('Omschrijving-3'),
-                    ),
-                    'original_description' => $this->joinDescriptions(
-                        $get('Omschrijving-1'),
-                        $get('Omschrijving-2'),
-                        $get('Omschrijving-3'),
-                    ),
+                    'description' => $desc,
+                    'original_description' => $desc,
                 ];
             }
 
@@ -157,7 +155,7 @@ class RabobankCsvParser
 
     private function normalizeIban(string $iban): string
     {
-        return strtoupper(preg_replace('/\s+/', '', $iban));
+        return strtoupper(preg_replace('/\s+/', '', $iban) ?? '');
     }
 
     private function joinDescriptions(string ...$parts): string

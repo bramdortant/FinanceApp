@@ -182,6 +182,6 @@ class CsvImportService
 
     private function normalizeIban(string $iban): string
     {
-        return strtoupper(preg_replace('/\s+/', '', $iban));
+        return strtoupper(preg_replace('/\s+/', '', $iban) ?? '');
     }
 }

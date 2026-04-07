@@ -6,6 +6,7 @@ use App\Services\CsvImportService;
 use App\Services\RabobankCsvParser;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -131,32 +132,46 @@ class CsvImportController extends Controller
         $meta = json_decode(Storage::get($metaPath), true);
         $originalFilename = $meta['original_filename'] ?? 'import.csv';
 
+        $totalNew = 0;
+        $totalSkipped = 0;
+        $firstAccountId = null;
+        $missingIban = null;
+
         try {
             $grouped = $this->parser->parse(Storage::path($stashPath));
-            $totalNew = 0;
-            $totalSkipped = 0;
-            $firstAccountId = null;
 
-            foreach ($grouped as $iban => $rows) {
-                $account = $this->service->detectAccount($iban);
-                if ($account === null) {
-                    return Redirect::route('csv-imports.create')
-                        ->withErrors(['csv' => "Rekening voor IBAN {$iban} niet meer gevonden."]);
+            DB::transaction(function () use ($grouped, $originalFilename, &$totalNew, &$totalSkipped, &$firstAccountId, &$missingIban) {
+                foreach ($grouped as $iban => $rows) {
+                    $account = $this->service->detectAccount($iban);
+                    if ($account === null) {
+                        $missingIban = $iban;
+                        throw new \RuntimeException("Rekening voor IBAN {$iban} niet meer gevonden.");
+                    }
+
+                    $preview = $this->service->buildPreview($rows, $account);
+                    $import = $this->service->commit(
+                        $preview['rows'],
+                        $account,
+                        $originalFilename,
+                    );
+
+                    $totalNew += $import->imported_count;
+                    $totalSkipped += $import->skipped_count;
+                    $firstAccountId ??= $account->id;
                 }
-
-                $preview = $this->service->buildPreview($rows, $account);
-                $import = $this->service->commit(
-                    $preview['rows'],
-                    $account,
-                    $originalFilename,
-                );
-
-                $totalNew += $import->imported_count;
-                $totalSkipped += $import->skipped_count;
-                $firstAccountId ??= $account->id;
-            }
-        } finally {
+            });
+        } catch (\RuntimeException $e) {
             Storage::delete([$stashPath, $metaPath]);
+
+            return Redirect::route('csv-imports.create')
+                ->withErrors(['csv' => $e->getMessage()]);
+        }
+
+        Storage::delete([$stashPath, $metaPath]);
+
+        if ($firstAccountId === null) {
+            return Redirect::route('csv-imports.create')
+                ->withErrors(['csv' => 'Geen transacties geïmporteerd.']);
         }
 
         return Redirect::route('accounts.show', $firstAccountId)->with(

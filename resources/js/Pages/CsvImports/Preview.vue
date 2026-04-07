@@ -38,12 +38,16 @@ const formatCurrency = (amount) =>
 
 const formatDate = (date) => {
     if (!date) return '';
-    const [y, m, d] = date.split('-').map(Number);
+    const parts = date.split('-');
+    if (parts.length !== 3) return date;
+    const [y, m, d] = parts.map(Number);
+    const parsed = new Date(y, m - 1, d);
+    if (isNaN(parsed.getTime())) return date;
     return new Intl.DateTimeFormat('nl-NL', {
         day: '2-digit',
         month: 'short',
         year: 'numeric',
-    }).format(new Date(y, m - 1, d));
+    }).format(parsed);
 };
 
 const statusBadge = (status) => {
@@ -115,7 +119,13 @@ const statusBadge = (status) => {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100 bg-white">
+                            <tr v-if="!sections.length || !sections[activeTab]">
+                                <td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500">
+                                    Geen transacties om te tonen.
+                                </td>
+                            </tr>
                             <tr
+                                v-else
                                 v-for="(row, idx) in sections[activeTab].rows"
                                 :key="idx"
                                 :class="(row.status === 'duplicate' || row.status === 'transfer_mirror') ? 'opacity-50' : ''"
@@ -151,6 +161,10 @@ const statusBadge = (status) => {
                             </tr>
                         </tbody>
                     </table>
+                </div>
+
+                <div v-if="Object.keys(form.errors).length" class="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">
+                    <p v-for="(error, field) in form.errors" :key="field">{{ error }}</p>
                 </div>
 
                 <div class="mt-6 flex justify-end gap-3">
