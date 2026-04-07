@@ -857,6 +857,51 @@ analytical layers on top of that existing data model.
 
 **Deliverable**: Visual hierarchy for categories and grouped insights.
 
+### Phase 9b: UI/UX Polish — Desktop & Mobile
+
+**Branch**: `feature/ui-polish`
+
+The earlier phases focused on building functionality fast. This phase is
+explicitly about making the app look and feel good — and especially about
+making the mobile experience first-class, since day-to-day use (quick-add
+of a coffee, checking a balance) will mostly happen on the phone, while
+heavier flows like CSV import stay on the desktop.
+
+**Investigate first** (no code yet — produce a short notes file in `docs/`):
+
+- Walk every page on desktop and on a real phone (or devtools mobile emulation).
+  Capture screenshots, list everything that feels clunky, cramped, or ugly.
+- Decide per page whether the mobile UX should mirror the desktop layout
+  or diverge. Examples to think through:
+  - Account show page: action buttons should be large thumb-targets at the
+    bottom of the screen on mobile, not a 4-column grid up top.
+  - Transaction list: maybe swipe-to-edit/delete on mobile vs click on desktop.
+  - Modals: full-screen sheets on mobile vs centred dialogs on desktop.
+  - Navigation: bottom tab bar on mobile vs top nav on desktop.
+- Identify which flows are desktop-only (CSV import, bulk categorisation,
+  category management) and which are mobile-primary (quick-add, balance check,
+  recent activity).
+- Pick a small visual language to commit to: spacing scale, typography, colour
+  accents, button hierarchy, empty-state illustrations.
+
+**Then implement**:
+
+- Apply the visual language consistently across every existing page.
+- Build the mobile-specific layouts/components identified in the investigation
+  (responsive breakpoints, conditional components, or genuinely separate views
+  where the UX diverges enough).
+- Add a PWA manifest + install prompt so the phone version feels like an app
+  (this overlaps with Phase 11 — pull it forward if it helps mobile testing).
+- Re-run the accessibility pass against any new components.
+
+**Deliverable**: An app that looks intentional rather than scaffolded, with
+a phone experience that's actually pleasant for the daily-use flows.
+
+> Note: We deliberately keep re-evaluating each phase as we go. If by the
+> time we reach this phase we've already polished things incrementally, the
+> scope here can shrink — or vice versa, if more issues have piled up, the
+> scope can grow. Update this section before starting the phase.
+
 ### Phase 10: Security Audit
 
 **Branch**: `feature/security-audit`
