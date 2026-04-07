@@ -906,6 +906,12 @@ heavier flows like CSV import stay on the desktop.
   sides, add detection: when a parsed row's counterparty IBAN matches an own
   account, look for an existing transfer with the opposite direction within ±1
   day and skip it as a duplicate.
+- **Nice-to-have from Phase 4a**: refactor stashed-CSV cleanup to use a
+  Laravel scheduled command (cron) instead of the current opportunistic
+  cleanup that runs on every upload. Good excuse to learn how Laravel's
+  task scheduler works (`app/Console/Kernel.php` schedule, `php artisan
+  schedule:run` via cron). The opportunistic approach works fine for a
+  single user but a scheduled job is the cleaner long-term solution.
 - **Suggestion to evaluate**: replace the current category colour swatch with a
   Font Awesome (or similar) icon per category, tinted with the category's hex
   colour. Would need a `categories.icon` column, an icon picker in the category

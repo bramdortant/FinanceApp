@@ -25,7 +25,26 @@ class CsvImportController extends Controller
      */
     public function create(): Response
     {
+        $this->cleanupStaleStashes();
+
         return Inertia::render('CsvImports/Create');
+    }
+
+    /**
+     * Opportunistic cleanup of abandoned uploads. Anything in csv-imports/
+     * older than 24h is removed. Runs on every visit to the upload form so
+     * we don't need a scheduler. Phase 9b will replace this with a proper
+     * scheduled command.
+     */
+    private function cleanupStaleStashes(): void
+    {
+        $cutoff = now()->subDay()->getTimestamp();
+
+        foreach (Storage::files('csv-imports') as $path) {
+            if (Storage::lastModified($path) < $cutoff) {
+                Storage::delete($path);
+            }
+        }
     }
 
     /**
@@ -47,6 +66,7 @@ class CsvImportController extends Controller
         Storage::put($stashPath, file_get_contents($file->getRealPath()));
         Storage::put($metaPath, json_encode([
             'original_filename' => $file->getClientOriginalName(),
+            'expires_at' => now()->addDay()->toIso8601String(),
         ]));
 
         return Redirect::route('csv-imports.preview', ['token' => $token]);

@@ -150,7 +150,11 @@ class RabobankCsvParser
         $clean = str_replace(',', '.', $clean);
 
         // bcadd with scale 2 normalizes to two decimals and validates the format.
-        return bcadd($clean, '0', 2);
+        try {
+            return bcadd($clean, '0', 2);
+        } catch (\ValueError|\TypeError $e) {
+            throw new RuntimeException("Ongeldig bedrag in CSV: '{$value}'.");
+        }
     }
 
     private function normalizeIban(string $iban): string
