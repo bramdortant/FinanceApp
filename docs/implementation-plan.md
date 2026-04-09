@@ -574,16 +574,19 @@ Phase 4 (CSV import) and beyond.
 
 **Branch**: `feature/csv-import`
 
-- **Upload page**: File picker for CSV. The target account is
-  **auto-detected from the IBAN inside the CSV** (Rabobank exports
+- **Upload page**: Drag-and-drop file picker for CSV. The target account
+  is **auto-detected from the IBAN inside the CSV** (Rabobank exports
   include the owner IBAN). If the IBAN matches an existing account, use
-  it. If not, prompt the user to either pick an existing account or
-  create a new one on the spot. No mandatory dropdown for the common
-  case.
+  it. If not, show an inline form to create the missing account(s) with
+  the IBAN pre-filled — the user fills in name, type, and starting
+  balance, then continues to the preview. A cancel button aborts the
+  import and cleans up the stashed file. (NOTE: the inline account
+  creation step may be removed in a future phase if the workflow proves
+  unnecessary.)
 - **CSV preview**: Show parsed rows before importing (so you can verify)
-- **Column mapping**: Match CSV columns to our fields (date, description,
-  amount, counterparty_name, counterparty_iban, balance_after,
-  transaction_code) — Dutch bank formats vary, so this step is important
+- **Rabobank-only parsing**: Column mapping is hardcoded for Rabobank
+  CSV format. A flexible column mapping UI for other banks (ING, ABN)
+  is deferred — see nice-to-haves after Phase 9b
 - **Automatic transfer detection** (uses Phase 3's IBAN field): When
   parsing a row, check if the counterparty IBAN matches another account
   the user owns in this system. If yes, create a transfer-type
@@ -846,6 +849,54 @@ Switchable chart views — same data, different perspectives:
 
 **Deliverable**: Split a single transaction across multiple categories.
 
+### Phase 8b: Transaction Buckets
+
+**Branch**: `feature/buckets`
+
+Group transactions into named buckets to track total spending on a
+specific purpose — for example a holiday, a renovation, a birthday
+party, or a side project. Unlike categories (which are permanent and
+reusable), buckets are one-off collections tied to a specific event or
+goal.
+
+- **Bucket CRUD**: Create a bucket with a name, optional description,
+  and optional target amount (e.g. "holiday budget: € 2.000")
+- **Assign transactions**: Add existing transactions to a bucket. A
+  transaction can belong to at most one bucket (keeps the model simple;
+  revisit if needed)
+- **Bucket overview page**: Show all transactions in a bucket with a
+  running total. If a target amount was set, show progress
+- **Bucket list page**: Overview of all buckets with their totals,
+  sorted by most recent activity
+- **Dashboard integration**: Optionally show bucket totals on the
+  dashboard (Phase 7)
+
+**UI/UX — to be decided before implementation:**
+
+The assignment interaction is the key design question. Options to
+evaluate:
+
+1. **Drag-and-drop** from transaction list into a bucket sidebar or
+   drop zone — most intuitive but complex to build, especially on
+   mobile
+2. **Checkbox selection + "Toevoegen aan bucket" button** — simpler,
+   works on mobile, similar to the bulk categorize flow (Phase 5)
+3. **Per-transaction dropdown/button** — like category assignment, add
+   a "Bucket" field to the transaction detail or edit modal
+4. **Bucket-first**: open a bucket, then search/filter transactions to
+   add — good for building a bucket from scratch
+
+Decide during investigation which approach (or combination) fits best.
+Consider mobile usability — drag-and-drop may need a different
+interaction on phones.
+
+**Database**: `buckets` table (id, name, description, target_amount,
+created_at, updated_at). Add `bucket_id` nullable foreign key to
+`transactions`.
+
+**Deliverable**: Group transactions into purpose-specific buckets and
+see how much was spent on each.
+
 ### Phase 9: Sub-Categories — Tree Display & Dashboard Grouping
 
 **Branch**: `feature/sub-categories`
@@ -912,6 +963,19 @@ heavier flows like CSV import stay on the desktop.
   task scheduler works (`app/Console/Kernel.php` schedule, `php artisan
   schedule:run` via cron). The opportunistic approach works fine for a
   single user but a scheduled job is the cleaner long-term solution.
+- **Nice-to-have from Phase 4a**: flexible column mapping UI. Currently
+  CSV import only supports Rabobank's hardcoded format. A column mapping
+  step would let the user match CSV headers to our fields (date, amount,
+  description, etc.), enabling support for ING, ABN AMRO, and other
+  Dutch banks without writing a dedicated parser for each.
+- **Nice-to-have from Phase 4a**: on the missing-accounts page, add an
+  option to map an unrecognised IBAN to an existing account (e.g. if
+  the user forgot to add the IBAN to an account they already created).
+  Currently the page only offers "create new" or "cancel".
+- **Nice-to-have from Phase 4a**: the inline account creation during
+  CSV import (`MissingAccounts.vue`, `createAccounts()` controller
+  method) may be removed if the "create account first" workflow proves
+  sufficient in practice. Evaluate during Phase 9b polish.
 - **Suggestion to evaluate**: replace the current category colour swatch with a
   Font Awesome (or similar) icon per category, tinted with the category's hex
   colour. Would need a `categories.icon` column, an icon picker in the category

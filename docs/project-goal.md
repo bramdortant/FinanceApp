@@ -79,6 +79,8 @@ providing clear insight into spending patterns through categorized transaction d
 - AI auto-categorization (OpenAI)
 - Advanced dashboard charts (trends, comparisons, stacked bars)
 - Transaction splitting
+- Transaction buckets (group transactions by purpose, e.g. a holiday or
+  renovation, to track total spending on that event)
 - Sub-categories (hierarchical)
 - Recurring transactions
 - Recurring expense detector (auto-detect from bank data)

@@ -24,6 +24,8 @@ Route::middleware('auth')->group(function () {
     Route::get('csv-imports/create', [CsvImportController::class, 'create'])->name('csv-imports.create');
     Route::post('csv-imports/upload', [CsvImportController::class, 'upload'])->name('csv-imports.upload');
     Route::get('csv-imports/{token}/preview', [CsvImportController::class, 'preview'])->name('csv-imports.preview');
+    Route::post('csv-imports/{token}/create-accounts', [CsvImportController::class, 'createAccounts'])->name('csv-imports.create-accounts');
+    Route::delete('csv-imports/{token}', [CsvImportController::class, 'cancel'])->name('csv-imports.cancel');
     Route::post('csv-imports', [CsvImportController::class, 'store'])->name('csv-imports.store');
 
     Route::post('accounts/{account}/transactions', [TransactionController::class, 'store'])->name('transactions.store');
