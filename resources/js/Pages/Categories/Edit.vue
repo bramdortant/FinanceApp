@@ -11,16 +11,11 @@ const props = defineProps({
         type: Object,
         required: true,
     },
-    parentCategories: {
-        type: Array,
-        required: true,
-    },
 });
 
 const form = useForm({
     name: props.category.name,
     type: props.category.type || 'expense',
-    parent_id: props.category.parent_id,
     color: props.category.color || '#6B7280',
 });
 
@@ -67,28 +62,6 @@ const submit = () => {
                                 <option value="income">Inkomsten</option>
                             </select>
                             <InputError class="mt-2" :message="form.errors.type" />
-                        </div>
-
-                        <div>
-                            <InputLabel for="parent_id" value="Hoofdcategorie (optioneel)" />
-                            <select
-                                id="parent_id"
-                                v-model="form.parent_id"
-                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                            >
-                                <option :value="null">Geen (hoofdcategorie)</option>
-                                <option
-                                    v-for="parent in parentCategories"
-                                    :key="parent.id"
-                                    :value="parent.id"
-                                >
-                                    {{ parent.name }}
-                                </option>
-                            </select>
-                            <p class="mt-1 text-xs text-gray-500">
-                                Categorieën die een circulaire keten zouden maken zijn uitgesloten.
-                            </p>
-                            <InputError class="mt-2" :message="form.errors.parent_id" />
                         </div>
 
                         <div>
