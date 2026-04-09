@@ -2,23 +2,213 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { Head, Link, useForm, router } from '@inertiajs/vue3';
+import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue';
 
 const props = defineProps({
     token: { type: String, required: true },
     originalFilename: { type: String, required: true },
     sections: { type: Array, required: true },
+    categories: { type: Array, required: true },
+    transferCategoryId: { type: Number, default: null },
 });
 
 const activeTab = ref(0);
 
+// Category assignments keyed by row hash → category_id.
+// Pre-filled from rule matches and transfer detection.
+const categoryAssignments = ref({});
+
+// Initialize assignments from matched rules and transfers.
+const initAssignments = () => {
+    const map = {};
+    for (const section of props.sections) {
+        for (const row of section.rows) {
+            if (row.status === 'duplicate' || row.status === 'transfer_mirror') continue;
+            if (row.status === 'transfer' && props.transferCategoryId) {
+                map[row.hash] = props.transferCategoryId;
+            } else if (row.matched_category_id) {
+                map[row.hash] = row.matched_category_id;
+            }
+        }
+    }
+    categoryAssignments.value = map;
+};
+initAssignments();
+
+// All importable rows (not duplicate/mirror) across all sections.
+const importableRows = computed(() => {
+    const rows = [];
+    for (const section of props.sections) {
+        for (const row of section.rows) {
+            if (row.status !== 'duplicate' && row.status !== 'transfer_mirror') {
+                rows.push(row);
+            }
+        }
+    }
+    return rows;
+});
+
+// Rows that still need a category.
+const uncategorizedRows = computed(() =>
+    importableRows.value.filter(r => !categoryAssignments.value[r.hash])
+);
+
+const allCategorized = computed(() => uncategorizedRows.value.length === 0 && importableRows.value.length > 0);
+
+// Active row for keyboard navigation.
+const activeRowHash = ref(null);
+
+const goToNextUncategorized = () => {
+    if (uncategorizedRows.value.length > 0) {
+        activeRowHash.value = uncategorizedRows.value[0].hash;
+    } else {
+        activeRowHash.value = null;
+    }
+};
+
+// Category picker visibility.
+const pickerOpenForHash = ref(null);
+const categoryType = ref('expense');
+
+const openPicker = (row) => {
+    if (row.status === 'transfer') return;
+    activeRowHash.value = row.hash;
+    categoryType.value = parseFloat(row.amount) >= 0 ? 'income' : 'expense';
+    pickerOpenForHash.value = row.hash;
+};
+
+const filteredPickerCategories = computed(() =>
+    props.categories.filter(c => c.type === categoryType.value)
+);
+
+// Rule creation prompt state.
+const rulePrompt = ref(null); // { hash, categoryId, categoryName, description }
+
+const assignCategory = (hash, categoryId) => {
+    categoryAssignments.value[hash] = categoryId;
+    pickerOpenForHash.value = null;
+
+    // If this was a manual assignment (no rule matched), offer to create a rule.
+    const row = importableRows.value.find(r => r.hash === hash);
+    if (row && !row.matched_rule_id && row.status !== 'transfer') {
+        const cat = props.categories.find(c => c.id === categoryId);
+        const pattern = row.counterparty_name || row.description || '';
+        if (pattern && cat) {
+            rulePrompt.value = {
+                hash,
+                categoryId,
+                categoryName: cat.name,
+                pattern: pattern,
+            };
+            return; // Don't advance yet — wait for prompt response.
+        }
+    }
+
+    nextTick(() => goToNextUncategorized());
+};
+
+const confirmRule = () => {
+    if (!rulePrompt.value) return;
+    fetch(route('category-rules.store'), {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
+        },
+        body: JSON.stringify({
+            match_pattern: rulePrompt.value.pattern,
+            category_id: rulePrompt.value.categoryId,
+        }),
+    }).then(() => {
+        // Auto-apply the new rule to other unmatched rows with the same pattern.
+        const pattern = rulePrompt.value.pattern.toLowerCase();
+        const catId = rulePrompt.value.categoryId;
+        for (const row of importableRows.value) {
+            if (categoryAssignments.value[row.hash]) continue;
+            const text = ((row.counterparty_name || '') + ' ' + (row.description || '')).toLowerCase();
+            if (text.includes(pattern)) {
+                categoryAssignments.value[row.hash] = catId;
+            }
+        }
+        rulePrompt.value = null;
+        nextTick(() => goToNextUncategorized());
+    });
+};
+
+const skipRule = () => {
+    rulePrompt.value = null;
+    nextTick(() => goToNextUncategorized());
+};
+
+// Keyboard navigation.
+const handleKeydown = (e) => {
+    if (pickerOpenForHash.value) {
+        // Number keys 1-9 to pick a category.
+        const num = parseInt(e.key);
+        if (num >= 1 && num <= 9) {
+            const cat = filteredPickerCategories.value[num - 1];
+            if (cat) {
+                e.preventDefault();
+                assignCategory(pickerOpenForHash.value, cat.id);
+            }
+            return;
+        }
+        if (e.key === '0') {
+            e.preventDefault();
+            const cat = filteredPickerCategories.value[9];
+            if (cat) assignCategory(pickerOpenForHash.value, cat.id);
+            return;
+        }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            pickerOpenForHash.value = null;
+            return;
+        }
+        return;
+    }
+
+    // Arrow keys to navigate rows.
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const rows = currentSectionRows.value;
+        if (!rows.length) return;
+        const currentIdx = rows.findIndex(r => r.hash === activeRowHash.value);
+        let nextIdx;
+        if (e.key === 'ArrowDown') {
+            nextIdx = currentIdx < rows.length - 1 ? currentIdx + 1 : 0;
+        } else {
+            nextIdx = currentIdx > 0 ? currentIdx - 1 : rows.length - 1;
+        }
+        activeRowHash.value = rows[nextIdx].hash;
+        return;
+    }
+
+    // Enter to open picker on active row.
+    if (e.key === 'Enter' && activeRowHash.value) {
+        e.preventDefault();
+        const row = importableRows.value.find(r => r.hash === activeRowHash.value);
+        if (row) openPicker(row);
+    }
+};
+
+const currentSectionRows = computed(() =>
+    props.sections[activeTab.value]?.rows ?? []
+);
+
+onMounted(() => {
+    document.addEventListener('keydown', handleKeydown);
+    goToNextUncategorized();
+});
+onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
+
 const form = useForm({
     token: props.token,
-    original_filename: props.originalFilename,
+    categories: {},
 });
 
 const submit = () => {
+    form.categories = { ...categoryAssignments.value };
     form.post(route('csv-imports.store'));
 };
 
@@ -56,6 +246,21 @@ const statusBadge = (status) => {
     if (status === 'transfer_mirror') return { label: 'Spiegel (skip)', class: 'bg-gray-200 text-gray-500' };
     return { label: 'Nieuw', class: 'bg-green-100 text-green-700' };
 };
+
+const getCategoryName = (hash) => {
+    const id = categoryAssignments.value[hash];
+    if (!id) return null;
+    if (id === props.transferCategoryId) return 'Overboeking';
+    const cat = props.categories.find(c => c.id === id);
+    return cat?.name ?? null;
+};
+
+const getCategoryColor = (hash) => {
+    const id = categoryAssignments.value[hash];
+    if (!id || id === props.transferCategoryId) return '#9CA3AF';
+    const cat = props.categories.find(c => c.id === id);
+    return cat?.color ?? '#6B7280';
+};
 </script>
 
 <template>
@@ -89,6 +294,12 @@ const statusBadge = (status) => {
                     </div>
                 </div>
 
+                <!-- Uncategorized counter -->
+                <div v-if="uncategorizedRows.length > 0" class="mb-4 rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                    <strong>{{ uncategorizedRows.length }}</strong> {{ uncategorizedRows.length === 1 ? 'transactie heeft' : 'transacties hebben' }} nog geen categorie.
+                    Wijs een categorie toe met de toetsen <kbd class="rounded bg-amber-200 px-1.5 py-0.5 text-xs font-mono">1</kbd>–<kbd class="rounded bg-amber-200 px-1.5 py-0.5 text-xs font-mono">9</kbd> of klik op de rij.
+                </div>
+
                 <div class="mb-4 flex gap-2 border-b border-gray-200">
                     <button
                         v-for="(section, idx) in sections"
@@ -115,12 +326,13 @@ const statusBadge = (status) => {
                                 <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Datum</th>
                                 <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Omschrijving</th>
                                 <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Tegenpartij</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Categorie</th>
                                 <th class="px-4 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Bedrag</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100 bg-white">
                             <tr v-if="!sections.length || !sections[activeTab]">
-                                <td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500">
+                                <td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500">
                                     Geen transacties om te tonen.
                                 </td>
                             </tr>
@@ -128,7 +340,13 @@ const statusBadge = (status) => {
                                 v-else
                                 v-for="(row, idx) in sections[activeTab].rows"
                                 :key="idx"
-                                :class="(row.status === 'duplicate' || row.status === 'transfer_mirror') ? 'opacity-50' : ''"
+                                :class="[
+                                    (row.status === 'duplicate' || row.status === 'transfer_mirror') ? 'opacity-50' : '',
+                                    activeRowHash === row.hash ? 'bg-indigo-50 ring-2 ring-inset ring-indigo-300' : '',
+                                    (row.status !== 'duplicate' && row.status !== 'transfer_mirror' && !categoryAssignments[row.hash]) ? 'bg-amber-50' : '',
+                                ]"
+                                class="cursor-pointer transition-colors"
+                                @click="openPicker(row)"
                             >
                                 <td class="whitespace-nowrap px-4 py-2">
                                     <span
@@ -152,6 +370,50 @@ const statusBadge = (status) => {
                                         {{ row.counterparty_name || '—' }}
                                     </div>
                                 </td>
+                                <td class="whitespace-nowrap px-4 py-2 text-sm">
+                                    <div v-if="row.status === 'duplicate' || row.status === 'transfer_mirror'" class="text-gray-400">
+                                        —
+                                    </div>
+                                    <div v-else-if="categoryAssignments[row.hash]" class="flex items-center gap-1.5">
+                                        <span
+                                            class="inline-block h-3 w-3 rounded-full border border-gray-200"
+                                            :style="{ backgroundColor: getCategoryColor(row.hash) }"
+                                        ></span>
+                                        <span class="text-gray-700">{{ getCategoryName(row.hash) }}</span>
+                                    </div>
+                                    <div v-else class="text-amber-600 font-medium">
+                                        Kies…
+                                    </div>
+
+                                    <!-- Inline category picker -->
+                                    <div
+                                        v-if="pickerOpenForHash === row.hash"
+                                        class="absolute z-10 mt-1 w-64 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
+                                        @click.stop
+                                    >
+                                        <div class="max-h-60 overflow-y-auto py-1">
+                                            <button
+                                                v-for="(cat, catIdx) in filteredPickerCategories"
+                                                :key="cat.id"
+                                                type="button"
+                                                class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-100"
+                                                @click="assignCategory(row.hash, cat.id)"
+                                            >
+                                                <span class="inline-flex h-4 w-4 items-center justify-center rounded text-xs font-mono text-gray-500 bg-gray-100">
+                                                    {{ catIdx < 9 ? catIdx + 1 : catIdx === 9 ? 0 : '' }}
+                                                </span>
+                                                <span
+                                                    class="inline-block h-3 w-3 rounded-full border border-gray-200"
+                                                    :style="{ backgroundColor: cat.color }"
+                                                ></span>
+                                                <span>{{ cat.name }}</span>
+                                            </button>
+                                            <div v-if="filteredPickerCategories.length === 0" class="px-3 py-2 text-sm text-gray-500">
+                                                Geen categorieën voor dit type.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
                                 <td
                                     class="whitespace-nowrap px-4 py-2 pr-6 text-right text-sm font-semibold"
                                     :class="parseFloat(row.amount) >= 0 ? 'text-green-600' : 'text-red-600'"
@@ -163,6 +425,30 @@ const statusBadge = (status) => {
                     </table>
                 </div>
 
+                <!-- Rule creation prompt -->
+                <div v-if="rulePrompt" class="mt-4 rounded-md border border-indigo-200 bg-indigo-50 p-4">
+                    <p class="text-sm text-indigo-900">
+                        Altijd <strong>"{{ rulePrompt.pattern }}"</strong> categoriseren als
+                        <strong>{{ rulePrompt.categoryName }}</strong>?
+                    </p>
+                    <div class="mt-2 flex gap-2">
+                        <button
+                            type="button"
+                            class="rounded bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700"
+                            @click="confirmRule"
+                        >
+                            Ja, regel aanmaken
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded bg-white px-3 py-1 text-xs font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50"
+                            @click="skipRule"
+                        >
+                            Nee, alleen deze keer
+                        </button>
+                    </div>
+                </div>
+
                 <div v-if="Object.keys(form.errors).length" class="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">
                     <p v-for="(error, field) in form.errors" :key="field">{{ error }}</p>
                 </div>
@@ -172,7 +458,7 @@ const statusBadge = (status) => {
                         <SecondaryButton type="button">Annuleren</SecondaryButton>
                     </Link>
                     <form @submit.prevent="submit">
-                        <PrimaryButton :disabled="form.processing || totals.new === 0">
+                        <PrimaryButton :disabled="form.processing || !allCategorized">
                             Bevestig import ({{ totals.new }} nieuw)
                         </PrimaryButton>
                     </form>

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\Category;
+use App\Services\CategoryRuleService;
 use App\Services\CsvImportService;
 use App\Services\RabobankCsvParser;
 use Illuminate\Http\RedirectResponse;
@@ -19,6 +21,7 @@ class CsvImportController extends Controller
     public function __construct(
         private RabobankCsvParser $parser,
         private CsvImportService $service,
+        private CategoryRuleService $ruleService,
     ) {}
 
     /**
@@ -109,9 +112,10 @@ class CsvImportController extends Controller
             }
 
             $preview = $this->service->buildPreview($rows, $account);
+            $previewRows = $this->ruleService->applyToRows($preview['rows']);
             $sections[] = [
                 'account' => ['id' => $account->id, 'name' => $account->name],
-                'rows' => $preview['rows'],
+                'rows' => $previewRows,
                 'summary' => $preview['summary'],
             ];
         }
@@ -129,10 +133,21 @@ class CsvImportController extends Controller
             ]);
         }
 
+        $categories = Category::select('id', 'name', 'type', 'color')
+            ->where('is_system', false)
+            ->orderBy('name')
+            ->get();
+
+        $transferCategory = Category::where('name', 'Overboeking')
+            ->where('is_system', true)
+            ->first();
+
         return Inertia::render('CsvImports/Preview', [
             'token' => $token,
             'originalFilename' => $meta['original_filename'] ?? 'import.csv',
             'sections' => $sections,
+            'categories' => $categories,
+            'transferCategoryId' => $transferCategory?->id,
         ]);
     }
 
@@ -194,9 +209,12 @@ class CsvImportController extends Controller
     {
         $request->validate([
             'token' => ['required', 'string', 'size:40'],
+            'categories' => ['required', 'array'],
+            'categories.*' => ['required', 'integer', 'exists:categories,id'],
         ]);
 
         $token = $request->string('token')->toString();
+        $categoryMap = $request->input('categories');
         $stashPath = "csv-imports/{$token}.csv";
         $metaPath = "csv-imports/{$token}.json";
 
@@ -215,7 +233,7 @@ class CsvImportController extends Controller
         try {
             $grouped = $this->parser->parse(Storage::path($stashPath));
 
-            DB::transaction(function () use ($grouped, $originalFilename, &$totalNew, &$totalSkipped, &$firstAccountId) {
+            DB::transaction(function () use ($grouped, $originalFilename, $categoryMap, &$totalNew, &$totalSkipped, &$firstAccountId) {
                 foreach ($grouped as $iban => $rows) {
                     $account = $this->service->detectAccount($iban);
                     if ($account === null) {
@@ -227,6 +245,7 @@ class CsvImportController extends Controller
                         $preview['rows'],
                         $account,
                         $originalFilename,
+                        $categoryMap,
                     );
 
                     $totalNew += $import->imported_count;

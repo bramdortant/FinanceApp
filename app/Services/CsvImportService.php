@@ -100,9 +100,12 @@ class CsvImportService
      *
      * Returns the CsvImport record so the caller can show a result page.
      */
-    public function commit(array $previewRows, Account $account, string $filename): CsvImport
+    /**
+     * @param  array<string, int>  $categoryMap  Hash → category_id mapping from the frontend
+     */
+    public function commit(array $previewRows, Account $account, string $filename, array $categoryMap = []): CsvImport
     {
-        return DB::transaction(function () use ($previewRows, $account, $filename) {
+        return DB::transaction(function () use ($previewRows, $account, $filename, $categoryMap) {
             $toInsert = array_filter(
                 $previewRows,
                 fn (array $r) => $r['status'] !== 'duplicate' && $r['status'] !== 'transfer_mirror'
@@ -123,7 +126,7 @@ class CsvImportService
                     'description' => $row['description'] ?: '—',
                     'amount' => $row['amount'],
                     'original_description' => $row['original_description'],
-                    'category_id' => null,
+                    'category_id' => $categoryMap[$row['hash']] ?? null,
                     'type' => $row['type'],
                     'transfer_to_account_id' => $row['transfer_to_account_id'],
                     'counterparty_name' => $row['counterparty_name'],

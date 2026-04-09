@@ -10,6 +10,7 @@ class CategoryRule extends Model
     protected $fillable = [
         'match_pattern',
         'category_id',
+        'match_count',
     ];
 
     public function category(): BelongsTo
