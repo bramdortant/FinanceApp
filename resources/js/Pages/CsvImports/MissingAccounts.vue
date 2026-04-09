@@ -64,7 +64,7 @@ const cancel = () => {
                         </p>
                     </div>
 
-                    <form x-on:submit.prevent="submit" class="space-y-8">
+                    <form @submit.prevent="submit" class="space-y-8">
                         <div
                             v-for="(account, index) in form.accounts"
                             :key="account.iban"
@@ -126,10 +126,10 @@ const cancel = () => {
                         <InputError class="mt-2" :message="form.errors.accounts" />
 
                         <div class="flex items-center gap-4">
-                            <PrimaryButton :disabled="form.processing" x-on:click="submit">
+                            <PrimaryButton :disabled="form.processing">
                                 Aanmaken en doorgaan
                             </PrimaryButton>
-                            <SecondaryButton x-on:click="cancel" :disabled="form.processing">
+                            <SecondaryButton type="button" @click="cancel" :disabled="form.processing">
                                 Annuleren
                             </SecondaryButton>
                         </div>
