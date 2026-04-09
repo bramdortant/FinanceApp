@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Account;
 use App\Services\CsvImportService;
 use App\Services\RabobankCsvParser;
 use Illuminate\Http\RedirectResponse;
@@ -115,11 +116,16 @@ class CsvImportController extends Controller
             ];
         }
 
+        // When the CSV contains IBANs that don't match any existing account,
+        // show an inline form so the user can create the missing accounts and
+        // continue to the preview. NOTE: this intermediate step may be removed
+        // in a future phase if the workflow proves unnecessary — see
+        // implementation plan Phase 4a notes.
         if (! empty($missing)) {
-            Storage::delete([$stashPath, $metaPath]);
-
-            return Redirect::route('csv-imports.create')->withErrors([
-                'csv' => 'Geen rekening gevonden voor IBAN: '.implode(', ', $missing).'. Maak deze eerst aan.',
+            return Inertia::render('CsvImports/MissingAccounts', [
+                'token' => $token,
+                'missingIbans' => $missing,
+                'originalFilename' => $meta['original_filename'] ?? 'import.csv',
             ]);
         }
 
@@ -128,6 +134,56 @@ class CsvImportController extends Controller
             'originalFilename' => $meta['original_filename'] ?? 'import.csv',
             'sections' => $sections,
         ]);
+    }
+
+    /**
+     * Step 3b (POST): create accounts for IBANs found in the CSV that didn't
+     * match any existing account, then redirect back to the preview.
+     *
+     * NOTE: This method may be removed in a future phase if the workflow
+     * proves unnecessary — see implementation plan Phase 4a notes.
+     */
+    public function createAccounts(Request $request, string $token): RedirectResponse
+    {
+        $stashPath = "csv-imports/{$token}.csv";
+        $metaPath = "csv-imports/{$token}.json";
+
+        if (! Storage::exists($stashPath) || ! Storage::exists($metaPath)) {
+            return Redirect::route('csv-imports.create')
+                ->withErrors(['csv' => 'Upload is verlopen. Upload het bestand opnieuw.']);
+        }
+
+        $validated = $request->validate([
+            'accounts' => ['required', 'array', 'min:1'],
+            'accounts.*.iban' => ['required', 'string', 'max:34'],
+            'accounts.*.name' => ['required', 'string', 'max:255'],
+            'accounts.*.type' => ['required', 'string', 'in:checking,savings,cash'],
+            'accounts.*.starting_balance' => ['required', 'numeric', 'decimal:0,2', 'min:-9999999.99', 'max:9999999.99'],
+        ]);
+
+        foreach ($validated['accounts'] as $data) {
+            Account::create([
+                'name' => $data['name'],
+                'type' => $data['type'],
+                'starting_balance' => $data['starting_balance'],
+                'iban' => strtoupper(preg_replace('/\s+/', '', $data['iban']) ?? ''),
+            ]);
+        }
+
+        return Redirect::route('csv-imports.preview', ['token' => $token]);
+    }
+
+    /**
+     * Cancel an in-progress import by deleting the stashed file.
+     */
+    public function cancel(string $token): RedirectResponse
+    {
+        Storage::delete([
+            "csv-imports/{$token}.csv",
+            "csv-imports/{$token}.json",
+        ]);
+
+        return Redirect::route('csv-imports.create');
     }
 
     /**
