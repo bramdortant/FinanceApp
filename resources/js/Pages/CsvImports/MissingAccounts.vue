@@ -17,9 +17,9 @@ import TextInput from '@/Components/TextInput.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 
 const props = defineProps({
-    token: String,
-    missingIbans: Array,
-    originalFilename: String,
+    token: { type: String, required: true },
+    missingIbans: { type: Array, required: true },
+    originalFilename: { type: String, required: true },
 });
 
 const form = useForm({
