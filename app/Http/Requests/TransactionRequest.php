@@ -21,8 +21,6 @@ class TransactionRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        // store: source comes from {account} route param
-        // update: source comes from the existing transaction
         $account = $this->route('account');
         $transaction = $this->route('transaction');
 
@@ -30,6 +28,18 @@ class TransactionRequest extends FormRequest
             $this->merge(['source_account_id' => $account->id]);
         } elseif ($transaction) {
             $this->merge(['source_account_id' => $transaction->account_id]);
+        }
+
+        // Transfers get the system "Overboeking" category automatically —
+        // the frontend doesn't need to send one.
+        if ($this->input('type') === TransactionType::Transfer->value) {
+            $transferCategory = Category::where('name', 'Overboeking')
+                ->where('is_system', true)
+                ->first();
+
+            if ($transferCategory) {
+                $this->merge(['category_id' => $transferCategory->id]);
+            }
         }
     }
 
@@ -41,10 +51,8 @@ class TransactionRequest extends FormRequest
             'date' => ['required', 'date'],
             'description' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:1000'],
-            'category_id' => ['nullable', 'exists:categories,id'],
+            'category_id' => ['required', 'exists:categories,id'],
             'source_account_id' => ['nullable', 'integer'],
-            // For transfers: the destination account. Must differ from source
-            // to prevent transferring an account to itself.
             'transfer_to_account_id' => [
                 'nullable',
                 'required_if:type,transfer',
@@ -59,20 +67,18 @@ class TransactionRequest extends FormRequest
         $validator->after(function ($validator) {
             $type = $this->input('type');
 
-            // Transfers must not have a category, income/expense should match the category type if a category is set.
+            // Skip category-type validation for transfers (system category).
             if ($type === TransactionType::Transfer->value) {
-                if ($this->filled('category_id')) {
-                    $validator->errors()->add('category_id', 'Overboekingen mogen geen categorie hebben.');
-                }
-
-                return;
-            }
-
-            if (! $this->filled('category_id')) {
                 return;
             }
 
             $category = Category::find($this->input('category_id'));
+            if ($category && $category->is_system) {
+                $validator->errors()->add('category_id', 'Systeemcategorieën kunnen niet handmatig worden toegewezen.');
+
+                return;
+            }
+
             if ($category && (string) $category->type !== (string) $type) {
                 $validator->errors()->add('category_id', 'Categorie type komt niet overeen met transactie type.');
             }

@@ -13,7 +13,8 @@ class CategoryController extends Controller
 {
     public function index(): Response
     {
-        $categories = Category::withCount('transactions')
+        $categories = Category::where('is_system', false)
+            ->withCount('transactions')
             ->orderBy('name')
             ->get();
 

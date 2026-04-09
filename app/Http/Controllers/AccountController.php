@@ -74,7 +74,10 @@ class AccountController extends Controller
             });
 
         $accounts = Account::select('id', 'name')->get();
-        $categories = Category::select('id', 'name', 'type', 'color')->orderBy('name')->get();
+        $categories = Category::select('id', 'name', 'type', 'color')
+            ->where('is_system', false)
+            ->orderBy('name')
+            ->get();
 
         return Inertia::render('Accounts/Show', [
             'account' => $account,

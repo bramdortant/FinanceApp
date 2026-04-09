@@ -11,6 +11,11 @@ class Category extends Model
         'name',
         'type',
         'color',
+        'is_system',
+    ];
+
+    protected $casts = [
+        'is_system' => 'boolean',
     ];
 
     public function transactions(): HasMany
