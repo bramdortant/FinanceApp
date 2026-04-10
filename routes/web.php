@@ -29,7 +29,10 @@ Route::middleware('auth')->group(function () {
     Route::delete('csv-imports/{token}', [CsvImportController::class, 'cancel'])->name('csv-imports.cancel');
     Route::post('csv-imports', [CsvImportController::class, 'store'])->name('csv-imports.store');
 
+    Route::get('category-rules', [CategoryRuleController::class, 'index'])->name('category-rules.index');
     Route::post('category-rules', [CategoryRuleController::class, 'store'])->name('category-rules.store');
+    Route::put('category-rules/{categoryRule}', [CategoryRuleController::class, 'update'])->name('category-rules.update');
+    Route::delete('category-rules/{categoryRule}', [CategoryRuleController::class, 'destroy'])->name('category-rules.destroy');
 
     Route::post('accounts/{account}/transactions', [TransactionController::class, 'store'])->name('transactions.store');
     Route::put('transactions/{transaction}', [TransactionController::class, 'update'])->name('transactions.update');
