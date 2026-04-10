@@ -27,8 +27,8 @@ providing clear insight into spending patterns through categorized transaction d
 ### Categorization
 
 - Fully custom categories (CRUD: create, edit, delete categories)
-- Hierarchical/nested categories (e.g. Groceries → Foods, Alcoholic Beverages)
-- Start with flat categories (1 level), design for max 2-3 levels deep in the future
+- Flat categories (no hierarchy — splitting handles the cases where a
+  transaction spans multiple categories, e.g. groceries + alcohol)
 - Auto-categorization that learns from user corrections (AI-powered, OpenAI)
 - Ability to split a single transaction into multiple categories
 - Bulk/quick category assignment for efficient processing
@@ -81,7 +81,6 @@ providing clear insight into spending patterns through categorized transaction d
 - Transaction splitting
 - Transaction buckets (group transactions by purpose, e.g. a holiday or
   renovation, to track total spending on that event)
-- Sub-categories (hierarchical)
 - Recurring transactions
 - Recurring expense detector (auto-detect from bank data)
 - Payment method breakdown (pin vs iDEAL vs direct debit, using bank codes)
