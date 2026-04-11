@@ -216,7 +216,7 @@ const currentSectionRows = computed(() =>
     props.sections[activeTab.value]?.rows ?? []
 );
 
-const closePicker = (e) => {
+const closePicker = () => {
     if (pickerOpenForHash.value) {
         pickerOpenForHash.value = null;
     }
@@ -224,12 +224,12 @@ const closePicker = (e) => {
 
 onMounted(() => {
     document.addEventListener('keydown', handleKeydown);
-    document.addEventListener('click', closePicker);
+    document.addEventListener('mousedown', closePicker);
     goToNextUncategorized();
 });
 onUnmounted(() => {
     document.removeEventListener('keydown', handleKeydown);
-    document.removeEventListener('click', closePicker);
+    document.removeEventListener('mousedown', closePicker);
 });
 
 const form = useForm({
@@ -376,6 +376,7 @@ const getCategoryColor = (hash) => {
                                     (row.status !== 'duplicate' && row.status !== 'transfer_mirror' && !categoryAssignments[row.hash]) ? 'bg-amber-50' : '',
                                 ]"
                                 class="cursor-pointer transition-colors"
+                                @mousedown.stop
                                 @click="openPicker(row, $event)"
                             >
                                 <td class="whitespace-nowrap px-4 py-2">
@@ -415,37 +416,6 @@ const getCategoryColor = (hash) => {
                                         Kies…
                                     </div>
 
-                                    <!-- Category picker (fixed position to avoid clipping) -->
-                                    <Teleport to="body">
-                                    <div
-                                        v-if="pickerOpenForHash === row.hash"
-                                        class="rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
-                                        :style="pickerStyle"
-                                        @click.stop
-                                    >
-                                        <div class="max-h-60 overflow-y-auto py-1">
-                                            <button
-                                                v-for="(cat, catIdx) in filteredPickerCategories"
-                                                :key="cat.id"
-                                                type="button"
-                                                class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-100"
-                                                @click="assignCategory(row.hash, cat.id)"
-                                            >
-                                                <span class="inline-flex h-4 w-4 items-center justify-center rounded text-xs font-mono text-gray-500 bg-gray-100">
-                                                    {{ catIdx < 9 ? catIdx + 1 : catIdx === 9 ? 0 : '' }}
-                                                </span>
-                                                <span
-                                                    class="inline-block h-3 w-3 rounded-full border border-gray-200"
-                                                    :style="{ backgroundColor: cat.color }"
-                                                ></span>
-                                                <span>{{ cat.name }}</span>
-                                            </button>
-                                            <div v-if="filteredPickerCategories.length === 0" class="px-3 py-2 text-sm text-gray-500">
-                                                Geen categorieën voor dit type.
-                                            </div>
-                                        </div>
-                                    </div>
-                                    </Teleport>
                                 </td>
                                 <td
                                     class="whitespace-nowrap px-4 py-2 pr-6 text-right text-sm font-semibold"
@@ -499,4 +469,37 @@ const getCategoryColor = (hash) => {
             </div>
         </div>
     </AuthenticatedLayout>
+
+    <!-- Category picker rendered once via Teleport, positioned over the active row -->
+    <Teleport to="body">
+        <div
+            v-if="pickerOpenForHash"
+            class="rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
+            :style="pickerStyle"
+            @click.stop
+            @mousedown.stop
+        >
+            <div class="max-h-60 overflow-y-auto py-1">
+                <button
+                    v-for="(cat, catIdx) in filteredPickerCategories"
+                    :key="cat.id"
+                    type="button"
+                    class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-100"
+                    @click="assignCategory(pickerOpenForHash, cat.id)"
+                >
+                    <span class="inline-flex h-4 w-4 items-center justify-center rounded text-xs font-mono text-gray-500 bg-gray-100">
+                        {{ catIdx < 9 ? catIdx + 1 : catIdx === 9 ? 0 : '' }}
+                    </span>
+                    <span
+                        class="inline-block h-3 w-3 rounded-full border border-gray-200"
+                        :style="{ backgroundColor: cat.color }"
+                    ></span>
+                    <span>{{ cat.name }}</span>
+                </button>
+                <div v-if="filteredPickerCategories.length === 0" class="px-3 py-2 text-sm text-gray-500">
+                    Geen categorieën voor dit type.
+                </div>
+            </div>
+        </div>
+    </Teleport>
 </template>
