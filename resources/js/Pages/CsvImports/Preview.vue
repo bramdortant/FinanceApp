@@ -80,19 +80,25 @@ const openPicker = (row, event) => {
     categoryType.value = parseFloat(row.amount) >= 0 ? 'income' : 'expense';
     pickerOpenForHash.value = row.hash;
 
-    // Position the picker using fixed positioning so it's not clipped by
-    // overflow containers on small screens.
+    // Position the picker near the click point. Use the category cell's
+    // position if we can find it, otherwise fall back to click coordinates.
     if (event) {
-        const rect = event.currentTarget.getBoundingClientRect();
-        const spaceBelow = window.innerHeight - rect.bottom;
+        const row = event.currentTarget;
+        const cells = row.querySelectorAll('td');
+        // Category cell is the 5th column (index 4).
+        const categoryCell = cells[4] || row;
+        const rect = categoryCell.getBoundingClientRect();
+        const pickerWidth = 256;
         const pickerHeight = 260;
+        const spaceBelow = window.innerHeight - rect.bottom;
+
         pickerStyle.value = {
             position: 'fixed',
-            left: Math.min(rect.left, window.innerWidth - 272) + 'px',
+            left: Math.min(rect.left, window.innerWidth - pickerWidth - 8) + 'px',
             top: spaceBelow > pickerHeight
-                ? rect.bottom + 'px'
-                : (rect.top - pickerHeight) + 'px',
-            width: '16rem',
+                ? rect.bottom + 4 + 'px'
+                : (rect.top - pickerHeight - 4) + 'px',
+            width: pickerWidth + 'px',
             zIndex: 50,
         };
     }
