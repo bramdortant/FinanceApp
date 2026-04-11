@@ -1,9 +1,11 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import InputError from '@/Components/InputError.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
+import TextInput from '@/Components/TextInput.vue';
 import { Head, Link, useForm, router } from '@inertiajs/vue3';
-import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { computed, ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
 
 const props = defineProps({
     token: { type: String, required: true },
@@ -15,11 +17,10 @@ const props = defineProps({
 
 const activeTab = ref(0);
 
-// Category assignments keyed by row hash → category_id.
-// Pre-filled from rule matches and transfer detection.
+// ── Category assignments (hash → category_id) ──────────────────
+
 const categoryAssignments = ref({});
 
-// Initialize assignments from matched rules and transfers.
 const initAssignments = () => {
     const map = {};
     for (const section of props.sections) {
@@ -36,7 +37,8 @@ const initAssignments = () => {
 };
 initAssignments();
 
-// All importable rows (not duplicate/mirror) across all sections.
+// ── Row helpers ─────────────────────────────────────────────────
+
 const importableRows = computed(() => {
     const rows = [];
     for (const section of props.sections) {
@@ -49,47 +51,111 @@ const importableRows = computed(() => {
     return rows;
 });
 
-// Rows that still need a category.
 const uncategorizedRows = computed(() =>
     importableRows.value.filter(r => !categoryAssignments.value[r.hash])
 );
 
-const allCategorized = computed(() => uncategorizedRows.value.length === 0 && importableRows.value.length > 0);
+const allCategorized = computed(() =>
+    uncategorizedRows.value.length === 0 && importableRows.value.length > 0
+);
 
-// Active row for keyboard navigation.
+const currentSectionRows = computed(() =>
+    props.sections[activeTab.value]?.rows ?? []
+);
+
+// ── Active row & navigation ─────────────────────────────────────
+
 const activeRowHash = ref(null);
 
 const goToNextUncategorized = () => {
     if (uncategorizedRows.value.length > 0) {
         activeRowHash.value = uncategorizedRows.value[0].hash;
+        scrollActiveRowIntoView();
     } else {
         activeRowHash.value = null;
     }
 };
 
-// Category picker visibility.
+const scrollActiveRowIntoView = () => {
+    nextTick(() => {
+        const el = document.querySelector(`[data-hash="${activeRowHash.value}"]`);
+        if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+};
+
+// ── Paint mode ──────────────────────────────────────────────────
+
+const paintMode = ref(false);
+const paintCategoryId = ref(null);
+const paintIsDragging = ref(false);
+
+const paintCategoryName = computed(() => {
+    if (!paintCategoryId.value) return null;
+    const cat = props.categories.find(c => c.id === paintCategoryId.value);
+    return cat?.name ?? null;
+});
+
+const paintCategoryColor = computed(() => {
+    if (!paintCategoryId.value) return '#6B7280';
+    const cat = props.categories.find(c => c.id === paintCategoryId.value);
+    return cat?.color ?? '#6B7280';
+});
+
+const togglePaintMode = () => {
+    paintMode.value = !paintMode.value;
+    if (!paintMode.value) {
+        paintCategoryId.value = null;
+        paintIsDragging.value = false;
+    }
+};
+
+const paintRow = (row) => {
+    if (!paintMode.value || !paintCategoryId.value) return;
+    if (row.status === 'transfer' || row.status === 'duplicate' || row.status === 'transfer_mirror') return;
+    categoryAssignments.value[row.hash] = paintCategoryId.value;
+};
+
+const onRowMouseDown = (row, event) => {
+    if (paintMode.value && paintCategoryId.value) {
+        paintIsDragging.value = true;
+        paintRow(row);
+        event.preventDefault();
+    }
+};
+
+const onRowMouseEnter = (row) => {
+    if (paintIsDragging.value) {
+        paintRow(row);
+    }
+};
+
+const onMouseUp = () => {
+    paintIsDragging.value = false;
+};
+
+// ── Category picker ─────────────────────────────────────────────
+
 const pickerOpenForHash = ref(null);
 const categoryType = ref('expense');
-
 const pickerStyle = ref({});
+const pickerSearch = ref('');
+const pickerSearchInput = ref(null);
 
 const openPicker = (row, event) => {
-    if (row.status === 'transfer') return;
-    if (row.status === 'duplicate' || row.status === 'transfer_mirror') return;
+    if (paintMode.value) return; // In paint mode, clicks paint — don't open picker.
+    if (row.status === 'transfer' || row.status === 'duplicate' || row.status === 'transfer_mirror') return;
     activeRowHash.value = row.hash;
     categoryType.value = parseFloat(row.amount) >= 0 ? 'income' : 'expense';
+    pickerSearch.value = '';
     pickerOpenForHash.value = row.hash;
 
-    // Position the picker near the click point. Use the category cell's
-    // position if we can find it, otherwise fall back to click coordinates.
     if (event) {
-        const row = event.currentTarget;
-        const cells = row.querySelectorAll('td');
-        // Category cell is the 5th column (index 4).
-        const categoryCell = cells[4] || row;
+        const tr = event.currentTarget;
+        const cells = tr.querySelectorAll('td');
+        const categoryCell = cells[4] || tr;
         const rect = categoryCell.getBoundingClientRect();
-        const pickerWidth = 256;
-        const pickerHeight = 260;
+        const pickerWidth = 288;
+        const pickerHeight = 320;
         const spaceBelow = window.innerHeight - rect.bottom;
 
         pickerStyle.value = {
@@ -102,99 +168,104 @@ const openPicker = (row, event) => {
             zIndex: 50,
         };
     }
+
+    nextTick(() => pickerSearchInput.value?.focus());
 };
 
-const filteredPickerCategories = computed(() =>
-    props.categories.filter(c => c.type === categoryType.value)
-);
-
-// Rule creation prompt state.
-const rulePrompt = ref(null); // { hash, categoryId, categoryName, description }
+const filteredPickerCategories = computed(() => {
+    let cats = props.categories.filter(c => c.type === categoryType.value);
+    if (pickerSearch.value) {
+        const q = pickerSearch.value.toLowerCase();
+        cats = cats.filter(c => c.name.toLowerCase().includes(q));
+    }
+    return cats;
+});
 
 const assignCategory = (hash, categoryId) => {
     categoryAssignments.value[hash] = categoryId;
     pickerOpenForHash.value = null;
+    pickerSearch.value = '';
 
-    // If this was a manual assignment (no rule matched), offer to create a rule.
-    const row = importableRows.value.find(r => r.hash === hash);
-    if (row && !row.matched_rule_id && row.status !== 'transfer') {
-        const cat = props.categories.find(c => c.id === categoryId);
-        const pattern = row.counterparty_name || row.description || '';
-        if (pattern && cat) {
-            rulePrompt.value = {
-                hash,
-                categoryId,
-                categoryName: cat.name,
-                pattern: pattern,
-            };
-            return; // Don't advance yet — wait for prompt response.
-        }
-    }
-
+    // Auto-advance to next uncategorized row.
     nextTick(() => goToNextUncategorized());
 };
 
-const confirmRule = () => {
-    if (!rulePrompt.value) return;
-    fetch(route('category-rules.store'), {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
-        },
-        body: JSON.stringify({
-            match_pattern: rulePrompt.value.pattern,
-            category_id: rulePrompt.value.categoryId,
-        }),
-    }).then(() => {
-        // Auto-apply the new rule to other unmatched rows with the same pattern.
-        const pattern = rulePrompt.value.pattern.toLowerCase();
-        const catId = rulePrompt.value.categoryId;
-        for (const row of importableRows.value) {
-            if (categoryAssignments.value[row.hash]) continue;
-            const text = ((row.counterparty_name || '') + ' ' + (row.description || '')).toLowerCase();
-            if (text.includes(pattern)) {
-                categoryAssignments.value[row.hash] = catId;
-            }
-        }
-        rulePrompt.value = null;
-        nextTick(() => goToNextUncategorized());
-    });
-};
-
-const skipRule = () => {
-    rulePrompt.value = null;
-    nextTick(() => goToNextUncategorized());
-};
-
-// Keyboard navigation.
-const handleKeydown = (e) => {
+const closePicker = () => {
     if (pickerOpenForHash.value) {
-        // Number keys 1-9 to pick a category.
+        pickerOpenForHash.value = null;
+        pickerSearch.value = '';
+    }
+};
+
+// ── Keyboard handling ───────────────────────────────────────────
+
+const handleKeydown = (e) => {
+    // When picker is open: number keys, search typing, escape, enter.
+    if (pickerOpenForHash.value) {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            closePicker();
+            return;
+        }
+
+        // Enter selects the first visible category (useful after filtering).
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const cat = filteredPickerCategories.value[0];
+            if (cat) assignCategory(pickerOpenForHash.value, cat.id);
+            return;
+        }
+
+        // Number keys 1-9, 0 to pick from visible list.
         const num = parseInt(e.key);
-        if (num >= 1 && num <= 9) {
-            const cat = filteredPickerCategories.value[num - 1];
+        if (!isNaN(num) && !pickerSearch.value) {
+            const idx = num === 0 ? 9 : num - 1;
+            const cat = filteredPickerCategories.value[idx];
             if (cat) {
                 e.preventDefault();
                 assignCategory(pickerOpenForHash.value, cat.id);
             }
             return;
         }
-        if (e.key === '0') {
+
+        // All other keys go to the search input (handled by the input itself).
+        return;
+    }
+
+    // When picker is closed:
+
+    // Tab = jump to next uncategorized row and open picker.
+    if (e.key === 'Tab' && !e.shiftKey) {
+        if (uncategorizedRows.value.length > 0) {
             e.preventDefault();
-            const cat = filteredPickerCategories.value[9];
-            if (cat) assignCategory(pickerOpenForHash.value, cat.id);
-            return;
-        }
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            pickerOpenForHash.value = null;
-            return;
+            const row = uncategorizedRows.value[0];
+            activeRowHash.value = row.hash;
+            scrollActiveRowIntoView();
+            // Open picker with position calculated from the DOM row.
+            nextTick(() => {
+                const el = document.querySelector(`[data-hash="${row.hash}"]`);
+                if (el) openPicker(row, { currentTarget: el });
+            });
         }
         return;
     }
 
-    // Arrow keys to navigate rows.
+    // Shift+Tab = jump to previous uncategorized row.
+    if (e.key === 'Tab' && e.shiftKey) {
+        if (uncategorizedRows.value.length > 0) {
+            e.preventDefault();
+            const row = uncategorizedRows.value[uncategorizedRows.value.length - 1];
+            activeRowHash.value = row.hash;
+            scrollActiveRowIntoView();
+            nextTick(() => {
+                const el = document.querySelector(`[data-hash="${row.hash}"]`);
+                if (el) openPicker(row, { currentTarget: el });
+            });
+        }
+        return;
+    }
+
+    // Arrow keys navigate ALL rows (including assigned ones).
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         const rows = currentSectionRows.value;
@@ -207,36 +278,34 @@ const handleKeydown = (e) => {
             nextIdx = currentIdx > 0 ? currentIdx - 1 : rows.length - 1;
         }
         activeRowHash.value = rows[nextIdx].hash;
+        scrollActiveRowIntoView();
         return;
     }
 
-    // Enter to open picker on active row.
+    // Enter opens picker on active row.
     if (e.key === 'Enter' && activeRowHash.value) {
         e.preventDefault();
         const row = importableRows.value.find(r => r.hash === activeRowHash.value);
-        if (row) openPicker(row);
-    }
-};
-
-const currentSectionRows = computed(() =>
-    props.sections[activeTab.value]?.rows ?? []
-);
-
-const closePicker = () => {
-    if (pickerOpenForHash.value) {
-        pickerOpenForHash.value = null;
+        if (row) {
+            const el = document.querySelector(`[data-hash="${row.hash}"]`);
+            openPicker(row, el ? { currentTarget: el } : null);
+        }
     }
 };
 
 onMounted(() => {
     document.addEventListener('keydown', handleKeydown);
     document.addEventListener('mousedown', closePicker);
+    document.addEventListener('mouseup', onMouseUp);
     goToNextUncategorized();
 });
 onUnmounted(() => {
     document.removeEventListener('keydown', handleKeydown);
     document.removeEventListener('mousedown', closePicker);
+    document.removeEventListener('mouseup', onMouseUp);
 });
+
+// ── Form submission ─────────────────────────────────────────────
 
 const form = useForm({
     token: props.token,
@@ -247,6 +316,8 @@ const submit = () => {
     form.categories = { ...categoryAssignments.value };
     form.post(route('csv-imports.store'));
 };
+
+// ── Formatting helpers ──────────────────────────────────────────
 
 const totals = computed(() => {
     const t = { new: 0, transfer: 0, mirror: 0, duplicate: 0 };
@@ -311,6 +382,7 @@ const getCategoryColor = (hash) => {
 
         <div class="py-12">
             <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
+                <!-- Summary tiles -->
                 <div class="mb-4 grid grid-cols-4 gap-4">
                     <div class="rounded-md bg-green-50 p-4 text-center">
                         <div class="text-2xl font-bold text-green-700">{{ totals.new }}</div>
@@ -330,12 +402,58 @@ const getCategoryColor = (hash) => {
                     </div>
                 </div>
 
-                <!-- Uncategorized counter -->
-                <div v-if="uncategorizedRows.length > 0" class="mb-4 rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
-                    <strong>{{ uncategorizedRows.length }}</strong> {{ uncategorizedRows.length === 1 ? 'transactie heeft' : 'transacties hebben' }} nog geen categorie.
-                    Wijs een categorie toe met de toetsen <kbd class="rounded bg-amber-200 px-1.5 py-0.5 text-xs font-mono">1</kbd>–<kbd class="rounded bg-amber-200 px-1.5 py-0.5 text-xs font-mono">9</kbd> of klik op de rij.
+                <!-- Uncategorized counter + paint mode toggle -->
+                <div class="mb-4 flex items-center justify-between gap-4">
+                    <div v-if="uncategorizedRows.length > 0" class="flex-1 rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                        <strong>{{ uncategorizedRows.length }}</strong> {{ uncategorizedRows.length === 1 ? 'transactie heeft' : 'transacties hebben' }} nog geen categorie.
+                        <span v-if="!paintMode">
+                            Klik op een rij of druk op <kbd class="rounded bg-amber-200 px-1.5 py-0.5 text-xs font-mono">Tab</kbd> om te beginnen.
+                        </span>
+                    </div>
+                    <div v-else class="flex-1 rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+                        Alle transacties hebben een categorie.
+                    </div>
+
+                    <button
+                        type="button"
+                        class="shrink-0 rounded-md px-3 py-2 text-sm font-medium transition"
+                        :class="paintMode
+                            ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                            : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50'"
+                        @click="togglePaintMode"
+                    >
+                        🎨 Verfmodus
+                    </button>
                 </div>
 
+                <!-- Paint mode category palette -->
+                <div v-if="paintMode" class="mb-4 rounded-md border border-indigo-200 bg-indigo-50 p-3">
+                    <p class="mb-2 text-xs text-indigo-700">Kies een categorie en klik (of sleep) over rijen om ze toe te wijzen:</p>
+                    <div class="flex flex-wrap gap-1.5">
+                        <button
+                            v-for="cat in categories.filter(c => c.type === 'expense')"
+                            :key="cat.id"
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition"
+                            :class="paintCategoryId === cat.id
+                                ? 'ring-2 ring-indigo-500 ring-offset-1 bg-white text-gray-900'
+                                : 'bg-white text-gray-600 hover:bg-gray-100'"
+                            @click="paintCategoryId = cat.id"
+                            @mousedown.stop
+                        >
+                            <span
+                                class="inline-block h-2.5 w-2.5 rounded-full"
+                                :style="{ backgroundColor: cat.color }"
+                            ></span>
+                            {{ cat.name }}
+                        </button>
+                    </div>
+                    <div v-if="paintCategoryId" class="mt-2 text-xs text-indigo-600">
+                        Actief: <strong>{{ paintCategoryName }}</strong> — klik of sleep over rijen.
+                    </div>
+                </div>
+
+                <!-- Account tabs -->
                 <div class="mb-4 flex gap-2 border-b border-gray-200">
                     <button
                         v-for="(section, idx) in sections"
@@ -354,6 +472,7 @@ const getCategoryColor = (hash) => {
                     </button>
                 </div>
 
+                <!-- Transaction table -->
                 <div class="overflow-x-auto bg-white shadow-sm sm:rounded-lg">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
@@ -376,13 +495,16 @@ const getCategoryColor = (hash) => {
                                 v-else
                                 v-for="(row, idx) in sections[activeTab].rows"
                                 :key="idx"
+                                :data-hash="row.hash"
                                 :class="[
                                     (row.status === 'duplicate' || row.status === 'transfer_mirror') ? 'opacity-50' : '',
                                     activeRowHash === row.hash ? 'bg-indigo-50 ring-2 ring-inset ring-indigo-300' : '',
                                     (row.status !== 'duplicate' && row.status !== 'transfer_mirror' && !categoryAssignments[row.hash]) ? 'bg-amber-50' : '',
+                                    paintMode && paintCategoryId ? 'select-none' : '',
                                 ]"
                                 class="cursor-pointer transition-colors"
-                                @mousedown.stop
+                                @mousedown.stop="onRowMouseDown(row, $event)"
+                                @mouseenter="onRowMouseEnter(row)"
                                 @click="openPicker(row, $event)"
                             >
                                 <td class="whitespace-nowrap px-4 py-2">
@@ -421,7 +543,6 @@ const getCategoryColor = (hash) => {
                                     <div v-else class="text-amber-600 font-medium">
                                         Kies…
                                     </div>
-
                                 </td>
                                 <td
                                     class="whitespace-nowrap px-4 py-2 pr-6 text-right text-sm font-semibold"
@@ -434,34 +555,12 @@ const getCategoryColor = (hash) => {
                     </table>
                 </div>
 
-                <!-- Rule creation prompt -->
-                <div v-if="rulePrompt" class="mt-4 rounded-md border border-indigo-200 bg-indigo-50 p-4">
-                    <p class="text-sm text-indigo-900">
-                        Altijd <strong>"{{ rulePrompt.pattern }}"</strong> categoriseren als
-                        <strong>{{ rulePrompt.categoryName }}</strong>?
-                    </p>
-                    <div class="mt-2 flex gap-2">
-                        <button
-                            type="button"
-                            class="rounded bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700"
-                            @click="confirmRule"
-                        >
-                            Ja, regel aanmaken
-                        </button>
-                        <button
-                            type="button"
-                            class="rounded bg-white px-3 py-1 text-xs font-semibold text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50"
-                            @click="skipRule"
-                        >
-                            Nee, alleen deze keer
-                        </button>
-                    </div>
-                </div>
-
+                <!-- Errors -->
                 <div v-if="Object.keys(form.errors).length" class="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">
                     <p v-for="(error, field) in form.errors" :key="field">{{ error }}</p>
                 </div>
 
+                <!-- Action buttons -->
                 <div class="mt-6 flex justify-end gap-3">
                     <Link :href="route('csv-imports.create')">
                         <SecondaryButton type="button">Annuleren</SecondaryButton>
@@ -476,7 +575,7 @@ const getCategoryColor = (hash) => {
         </div>
     </AuthenticatedLayout>
 
-    <!-- Category picker rendered once via Teleport, positioned over the active row -->
+    <!-- Category picker (Teleport to body to avoid overflow clipping) -->
     <Teleport to="body">
         <div
             v-if="pickerOpenForHash"
@@ -485,6 +584,17 @@ const getCategoryColor = (hash) => {
             @click.stop
             @mousedown.stop
         >
+            <!-- Search filter -->
+            <div class="border-b border-gray-100 p-2">
+                <input
+                    ref="pickerSearchInput"
+                    v-model="pickerSearch"
+                    type="text"
+                    class="w-full rounded border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    placeholder="Zoek categorie…"
+                    @keydown.stop
+                />
+            </div>
             <div class="max-h-60 overflow-y-auto py-1">
                 <button
                     v-for="(cat, catIdx) in filteredPickerCategories"
@@ -503,7 +613,7 @@ const getCategoryColor = (hash) => {
                     <span>{{ cat.name }}</span>
                 </button>
                 <div v-if="filteredPickerCategories.length === 0" class="px-3 py-2 text-sm text-gray-500">
-                    Geen categorieën voor dit type.
+                    Geen categorieën gevonden.
                 </div>
             </div>
         </div>
