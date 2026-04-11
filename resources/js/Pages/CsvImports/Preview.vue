@@ -71,11 +71,31 @@ const goToNextUncategorized = () => {
 const pickerOpenForHash = ref(null);
 const categoryType = ref('expense');
 
-const openPicker = (row) => {
+const pickerStyle = ref({});
+
+const openPicker = (row, event) => {
     if (row.status === 'transfer') return;
+    if (row.status === 'duplicate' || row.status === 'transfer_mirror') return;
     activeRowHash.value = row.hash;
     categoryType.value = parseFloat(row.amount) >= 0 ? 'income' : 'expense';
     pickerOpenForHash.value = row.hash;
+
+    // Position the picker using fixed positioning so it's not clipped by
+    // overflow containers on small screens.
+    if (event) {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const pickerHeight = 260;
+        pickerStyle.value = {
+            position: 'fixed',
+            left: Math.min(rect.left, window.innerWidth - 272) + 'px',
+            top: spaceBelow > pickerHeight
+                ? rect.bottom + 'px'
+                : (rect.top - pickerHeight) + 'px',
+            width: '16rem',
+            zIndex: 50,
+        };
+    }
 };
 
 const filteredPickerCategories = computed(() =>
@@ -196,11 +216,21 @@ const currentSectionRows = computed(() =>
     props.sections[activeTab.value]?.rows ?? []
 );
 
+const closePicker = (e) => {
+    if (pickerOpenForHash.value) {
+        pickerOpenForHash.value = null;
+    }
+};
+
 onMounted(() => {
     document.addEventListener('keydown', handleKeydown);
+    document.addEventListener('click', closePicker);
     goToNextUncategorized();
 });
-onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
+onUnmounted(() => {
+    document.removeEventListener('keydown', handleKeydown);
+    document.removeEventListener('click', closePicker);
+});
 
 const form = useForm({
     token: props.token,
@@ -346,7 +376,7 @@ const getCategoryColor = (hash) => {
                                     (row.status !== 'duplicate' && row.status !== 'transfer_mirror' && !categoryAssignments[row.hash]) ? 'bg-amber-50' : '',
                                 ]"
                                 class="cursor-pointer transition-colors"
-                                @click="openPicker(row)"
+                                @click="openPicker(row, $event)"
                             >
                                 <td class="whitespace-nowrap px-4 py-2">
                                     <span
@@ -385,10 +415,12 @@ const getCategoryColor = (hash) => {
                                         Kies…
                                     </div>
 
-                                    <!-- Inline category picker -->
+                                    <!-- Category picker (fixed position to avoid clipping) -->
+                                    <Teleport to="body">
                                     <div
                                         v-if="pickerOpenForHash === row.hash"
-                                        class="absolute z-10 mt-1 w-64 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
+                                        class="rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
+                                        :style="pickerStyle"
                                         @click.stop
                                     >
                                         <div class="max-h-60 overflow-y-auto py-1">
@@ -413,6 +445,7 @@ const getCategoryColor = (hash) => {
                                             </div>
                                         </div>
                                     </div>
+                                    </Teleport>
                                 </td>
                                 <td
                                     class="whitespace-nowrap px-4 py-2 pr-6 text-right text-sm font-semibold"
