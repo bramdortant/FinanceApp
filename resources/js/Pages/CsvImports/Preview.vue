@@ -198,21 +198,44 @@ const handleKeydown = (e) => {
         return;
     }
 
-    // Tab = jump to next uncategorized row.
+    // Tab = jump to next uncategorized row relative to current position.
     if (e.key === 'Tab' && !e.shiftKey) {
         if (uncategorizedRows.value.length > 0) {
             e.preventDefault();
-            goToNextUncategorized();
+            const allRows = importableRows.value;
+            const currentIdx = allRows.findIndex(r => r.hash === activeRowHash.value);
+            // Find the next uncategorized row after the current position.
+            const next = allRows.find((r, i) =>
+                i > currentIdx && !categoryAssignments.value[r.hash]
+                && r.status !== 'transfer' && r.status !== 'duplicate' && r.status !== 'transfer_mirror'
+            );
+            // Wrap around to the first uncategorized if none found after current.
+            const target = next || uncategorizedRows.value[0];
+            activeRowHash.value = target.hash;
+            scrollActiveRowIntoView();
         }
         return;
     }
 
-    // Shift+Tab = jump to last uncategorized row.
+    // Shift+Tab = jump to previous uncategorized row relative to current position.
     if (e.key === 'Tab' && e.shiftKey) {
         if (uncategorizedRows.value.length > 0) {
             e.preventDefault();
-            const row = uncategorizedRows.value[uncategorizedRows.value.length - 1];
-            activeRowHash.value = row.hash;
+            const allRows = importableRows.value;
+            const currentIdx = allRows.findIndex(r => r.hash === activeRowHash.value);
+            // Find the previous uncategorized row before the current position.
+            let prev = null;
+            for (let i = currentIdx - 1; i >= 0; i--) {
+                const r = allRows[i];
+                if (!categoryAssignments.value[r.hash]
+                    && r.status !== 'transfer' && r.status !== 'duplicate' && r.status !== 'transfer_mirror') {
+                    prev = r;
+                    break;
+                }
+            }
+            // Wrap around to the last uncategorized if none found before current.
+            const target = prev || uncategorizedRows.value[uncategorizedRows.value.length - 1];
+            activeRowHash.value = target.hash;
             scrollActiveRowIntoView();
         }
         return;
