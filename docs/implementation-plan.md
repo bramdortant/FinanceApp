@@ -803,6 +803,55 @@ be removed after completion.
 Deferred to after Phases 5–7 so the app has the tools (categories,
 splitting, buckets) to properly represent everything Monefy has.
 
+#### Critical: database backup strategy
+
+**Why this matters now**: Up to this point, the database only contained
+test data — running `php artisan migrate:fresh` or `migrate:rollback`
+was fine because nothing of value was lost. Phase 8 changes that. Each
+reconciled period represents hours of manual categorization work. If a
+migration rollback runs after real data exists, it can corrupt that
+work in ways that are hard to recover from.
+
+Specifically, the `category_id` column on `transactions` is nullable
+at the database level (SQLite cannot alter column constraints after
+creation), but the application requires it — `TransactionRequest`
+validation rejects null values. The system categories migration's
+`down()` method sets `category_id` to null for transactions that had
+system categories. After rollback, those transactions become
+uneditable through the UI because validation blocks saving without a
+category, but the database has null. You'd need manual SQL or tinker
+to fix every affected row.
+
+**Backup approach**: SQLite databases are single files — backing up is
+just copying the file. Before starting Phase 8, set up a simple backup
+routine:
+
+```bash
+# Create backups directory (one-time)
+mkdir -p database/backups
+
+# Before each period's reconciliation work:
+cp database/database.sqlite database/backups/backup-$(date +%Y%m%d-%H%M%S).sqlite
+```
+
+**When to back up**:
+
+- Before starting each period's reconciliation (Step 2)
+- Before running any new migration
+- Before any bulk data operation (imports, category reassignments)
+- After completing a period's reconciliation (checkpoint)
+
+**The rollback rule**: Once real categorized data exists in the
+database, **never use `migrate:rollback` or `migrate:fresh`**. From
+this point forward, all schema changes must be **additive** — new
+migrations that add columns, tables, or modify data forward. If a
+migration has a bug, write a new migration to fix it rather than
+rolling back. The `down()` methods in migrations are effectively dead
+code after this point.
+
+Add `database/backups/` to `.gitignore` so backup files don't bloat
+the repository.
+
 #### Prerequisite: finalize default categories
 
 After reviewing the Monefy category mapping (Step 1 below), decide on
