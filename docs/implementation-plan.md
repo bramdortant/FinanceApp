@@ -703,6 +703,34 @@ Rules need to be editable to prevent wrong matches from persisting.
 inline categorization with keyboard-driven assignment and auto-matching
 rules that improve over time.
 
+### Phase 5b: Rule Review Screen
+
+**Branch**: `feature/rule-review`
+
+After assigning categories to all rows on the CSV import preview, a
+second screen appears before the import is confirmed. This screen
+shows all unique counterparty/description → category assignments and
+lets the user decide which ones to save as persistent rules.
+
+- **Rule proposals**: Each unique pattern → category pair from the
+  import gets a row showing: the suggested pattern, the assigned
+  category (with color swatch), and the number of rows that matched
+- **Checkbox toggle**: Each rule is pre-checked for creation. Enter
+  toggles + advances to next row. Space toggles without advancing.
+  Arrow keys navigate between rows
+- **Pattern editing**: An edit button per row to clean up the
+  pattern (e.g. remove timestamps, store numbers from
+  "Albert Heijn Amsterdam 14:32" → "Albert Heijn")
+- **Confirm button**: Creates the selected rules and imports the
+  transactions in one action
+
+This replaces the inline "Altijd categoriseren als...?" prompt that
+was removed in Phase 5. The two-step flow keeps categorization fast
+(no interruptions) while still capturing rules.
+
+**Deliverable**: Rules are created in bulk after categorization,
+with the ability to review and edit patterns before saving.
+
 ### Phase 6: Transaction Splitting
 
 **Branch**: `feature/transaction-splitting`
@@ -775,6 +803,14 @@ be removed after completion.
 Deferred to after Phases 5–7 so the app has the tools (categories,
 splitting, buckets) to properly represent everything Monefy has.
 
+#### Prerequisite: finalize default categories
+
+After reviewing the Monefy category mapping (Step 1 below), decide on
+the final set of default categories for fresh installs. Create a seeder
+with these categories and their colors. This happens naturally after
+the mapping step, since that's when you see which Monefy categories
+were real vs repurposed.
+
 #### Step 1: Monefy import with category mapping
 
 Upload the Monefy CSV export. Before storing anything, show a
@@ -842,6 +878,24 @@ ready for deployment. After this, only new bank CSVs need importing.
 ### Phase 9: AI Auto-Categorization
 
 **Branch**: `feature/ai-categorization`
+
+#### Prerequisite: confidence and source tracking
+
+Add `category_confidence` (integer 0-100) and `category_source`
+(enum: manual, rule, ai) columns to `transactions`. Backfill existing
+transactions: manual assignments get confidence 100 + source "manual",
+rule-matched get confidence 100 + source "rule".
+
+This enables smart paint mode behavior in the CSV import sidebar:
+- **Skip** rows with confidence 100 + source "manual" (user chose this)
+- **Skip** rows with confidence 100 + source "rule" (trusted match)
+- **Override** rows with source "ai" and confidence < 100 (AI unsure)
+- **Always skip** transfers (system-assigned)
+
+Clicking a row manually always allows override regardless of
+confidence — that's an explicit user action.
+
+#### AI features
 
 - **OpenAI integration**: Send transaction descriptions to OpenAI, get
   suggested categories back
