@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('category_rules', function (Blueprint $table) {
-            $table->unsignedInteger('match_count')->default(0)->after('category_id');
+            $table->unsignedInteger('match_count')->default(0);
         });
     }
 

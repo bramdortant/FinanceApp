@@ -55,12 +55,15 @@ const createForm = useForm({
     category_id: null,
 });
 
+const closeCreate = () => {
+    createModalOpen.value = false;
+    createForm.reset();
+    createForm.clearErrors();
+};
+
 const submitCreate = () => {
     createForm.post(route('category-rules.store'), {
-        onSuccess: () => {
-            createModalOpen.value = false;
-            createForm.reset();
-        },
+        onSuccess: () => closeCreate(),
     });
 };
 
@@ -229,7 +232,7 @@ const deleteRule = () => {
         </Modal>
 
         <!-- Create modal -->
-        <Modal :show="createModalOpen" @close="createModalOpen = false">
+        <Modal :show="createModalOpen" @close="closeCreate">
             <form class="p-6" @submit.prevent="submitCreate">
                 <h2 class="text-lg font-medium text-gray-900">Nieuwe regel</h2>
 
@@ -265,7 +268,7 @@ const deleteRule = () => {
                 </div>
 
                 <div class="mt-6 flex justify-end gap-3">
-                    <SecondaryButton type="button" @click="createModalOpen = false">Annuleren</SecondaryButton>
+                    <SecondaryButton type="button" @click="closeCreate">Annuleren</SecondaryButton>
                     <PrimaryButton :disabled="createForm.processing">Aanmaken</PrimaryButton>
                 </div>
             </form>

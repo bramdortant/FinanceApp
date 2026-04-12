@@ -36,8 +36,13 @@ class CategoryController extends Controller
             ->with('success', 'Categorie aangemaakt.');
     }
 
-    public function edit(Category $category): Response
+    public function edit(Category $category): Response|RedirectResponse
     {
+        if ($category->is_system) {
+            return Redirect::route('categories.index')
+                ->with('error', 'Systeemcategorieën kunnen niet worden bewerkt.');
+        }
+
         return Inertia::render('Categories/Edit', [
             'category' => $category,
         ]);
@@ -45,6 +50,10 @@ class CategoryController extends Controller
 
     public function update(CategoryRequest $request, Category $category): RedirectResponse
     {
+        if ($category->is_system) {
+            return Redirect::route('categories.index')
+                ->with('error', 'Systeemcategorieën kunnen niet worden bewerkt.');
+        }
         // Prevent changing income/expense type when transactions already exist —
         // it would leave them with a category whose type no longer matches.
         if (
@@ -63,6 +72,11 @@ class CategoryController extends Controller
 
     public function destroy(Category $category): RedirectResponse
     {
+        if ($category->is_system) {
+            return Redirect::route('categories.index')
+                ->with('error', 'Systeemcategorieën kunnen niet worden verwijderd.');
+        }
+
         if ($category->transactions()->exists()) {
             return Redirect::route('categories.index')
                 ->with('error', 'Kan een categorie met transacties niet verwijderen.');

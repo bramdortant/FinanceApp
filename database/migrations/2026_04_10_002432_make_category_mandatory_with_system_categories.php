@@ -54,7 +54,12 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Clear system category assignments.
+        // NOTE: Rolling back sets category_id to null for transactions that
+        // had system categories. This is only safe during development —
+        // in production, run migrate:fresh instead. The application-level
+        // validation (TransactionRequest) requires category_id, so
+        // transactions with null category_id won't be editable until
+        // they're re-assigned via tinker or a fresh migration.
         DB::table('transactions')
             ->whereIn('category_id', function ($query) {
                 $query->select('id')->from('categories')->where('is_system', true);

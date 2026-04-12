@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\CategoryRule;
+use Illuminate\Support\Collection;
 
 /**
  * Applies category rules to transaction descriptions. Rules are simple
@@ -17,28 +18,13 @@ class CategoryRuleService
 {
     /**
      * Find the best matching rule for a transaction description.
-     *
-     * Returns the matching CategoryRule (with category relation loaded),
-     * or null if no rule matches.
      */
     public function match(string $description, ?string $originalDescription = null): ?CategoryRule
     {
         $rules = CategoryRule::with('category')->get();
-        $bestMatch = null;
-        $bestLength = 0;
-
         $searchText = mb_strtolower($description . ' ' . ($originalDescription ?? ''));
 
-        foreach ($rules as $rule) {
-            $pattern = mb_strtolower($rule->match_pattern);
-
-            if (str_contains($searchText, $pattern) && mb_strlen($pattern) > $bestLength) {
-                $bestMatch = $rule;
-                $bestLength = mb_strlen($pattern);
-            }
-        }
-
-        return $bestMatch;
+        return $this->findBestMatch($searchText, $rules);
     }
 
     /**
@@ -60,17 +46,7 @@ class CategoryRuleService
                 ($row['description'] ?? '') . ' ' . ($row['original_description'] ?? '')
             );
 
-            $bestMatch = null;
-            $bestLength = 0;
-
-            foreach ($rules as $rule) {
-                $pattern = mb_strtolower($rule->match_pattern);
-
-                if (str_contains($searchText, $pattern) && mb_strlen($pattern) > $bestLength) {
-                    $bestMatch = $rule;
-                    $bestLength = mb_strlen($pattern);
-                }
-            }
+            $bestMatch = $this->findBestMatch($searchText, $rules);
 
             if ($bestMatch) {
                 $row['matched_category_id'] = $bestMatch->category_id;
@@ -88,5 +64,26 @@ class CategoryRuleService
         }
 
         return $rows;
+    }
+
+    /**
+     * Find the rule with the longest matching pattern in the search text.
+     * Longer patterns are more specific, so they take priority.
+     */
+    private function findBestMatch(string $searchText, Collection $rules): ?CategoryRule
+    {
+        $bestMatch = null;
+        $bestLength = 0;
+
+        foreach ($rules as $rule) {
+            $pattern = mb_strtolower($rule->match_pattern);
+
+            if (str_contains($searchText, $pattern) && mb_strlen($pattern) > $bestLength) {
+                $bestMatch = $rule;
+                $bestLength = mb_strlen($pattern);
+            }
+        }
+
+        return $bestMatch;
     }
 }

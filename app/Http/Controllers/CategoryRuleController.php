@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Redirect;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -80,7 +81,10 @@ class CategoryRuleController extends Controller
     public function update(Request $request, CategoryRule $categoryRule): RedirectResponse
     {
         $validated = $request->validate([
-            'match_pattern' => ['required', 'string', 'max:255'],
+            'match_pattern' => [
+                'required', 'string', 'max:255',
+                Rule::unique('category_rules')->ignore($categoryRule->id),
+            ],
             'category_id' => ['required', 'exists:categories,id'],
         ]);
 

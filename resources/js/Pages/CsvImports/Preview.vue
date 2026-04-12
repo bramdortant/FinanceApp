@@ -173,8 +173,9 @@ const assignCategory = (categoryId) => {
 };
 
 const onRowClick = (row, event) => {
-    // Ctrl+click = paint mode.
-    if (event.ctrlKey && armedCategoryId.value) return;
+    // Ctrl+click is handled by onRowMouseDown for paint mode — skip here
+    // to avoid firing both paint and select on the same interaction.
+    if (event.ctrlKey) return;
 
     // Normal click = select this row.
     activeRowHash.value = row.hash;

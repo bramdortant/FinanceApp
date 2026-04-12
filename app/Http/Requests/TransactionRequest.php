@@ -37,9 +37,13 @@ class TransactionRequest extends FormRequest
                 ->where('is_system', true)
                 ->first();
 
-            if ($transferCategory) {
-                $this->merge(['category_id' => $transferCategory->id]);
+            if (! $transferCategory) {
+                throw new \RuntimeException(
+                    'Systeemcategorie "Overboeking" ontbreekt. Voer de migraties opnieuw uit.'
+                );
             }
+
+            $this->merge(['category_id' => $transferCategory->id]);
         }
     }
 
