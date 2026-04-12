@@ -133,10 +133,17 @@ class CsvImportController extends Controller
             ]);
         }
 
-        $categories = Category::select('id', 'name', 'type', 'color')
-            ->where('is_system', false)
+        $categories = Category::where('is_system', false)
+            ->withCount('transactions')
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->map(fn ($c) => [
+                'id' => $c->id,
+                'name' => $c->name,
+                'type' => $c->type,
+                'color' => $c->color,
+                'usage_count' => $c->transactions_count,
+            ]);
 
         $transferCategory = Category::where('name', 'Overboeking')
             ->where('is_system', true)

@@ -1,11 +1,9 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import InputError from '@/Components/InputError.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
-import { Head, Link, useForm, router } from '@inertiajs/vue3';
-import { computed, ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
+import { Head, Link, useForm } from '@inertiajs/vue3';
+import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue';
 
 const props = defineProps({
     token: { type: String, required: true },
@@ -20,6 +18,9 @@ const activeTab = ref(0);
 // ── Category assignments (hash → category_id) ──────────────────
 
 const categoryAssignments = ref({});
+
+// Track session usage to improve sorting over time within this import.
+const sessionUsage = ref({});
 
 const initAssignments = () => {
     const map = {};
@@ -63,6 +64,39 @@ const currentSectionRows = computed(() =>
     props.sections[activeTab.value]?.rows ?? []
 );
 
+// ── Sidebar categories ──────────────────────────────────────────
+
+const sidebarSearch = ref('');
+const sidebarSearchInput = ref(null);
+
+// Determine the category type based on the active row.
+const activeCategoryType = computed(() => {
+    if (!activeRowHash.value) return 'expense';
+    const row = importableRows.value.find(r => r.hash === activeRowHash.value);
+    if (!row) return 'expense';
+    return parseFloat(row.amount) >= 0 ? 'income' : 'expense';
+});
+
+// Categories sorted by usage (backend count + session count), filtered by type and search.
+const sortedCategories = computed(() => {
+    let cats = props.categories.filter(c => c.type === activeCategoryType.value);
+
+    // Sort by combined usage: backend usage_count + session usage.
+    cats = [...cats].sort((a, b) => {
+        const usageA = (a.usage_count || 0) + (sessionUsage.value[a.id] || 0);
+        const usageB = (b.usage_count || 0) + (sessionUsage.value[b.id] || 0);
+        if (usageB !== usageA) return usageB - usageA;
+        return a.name.localeCompare(b.name);
+    });
+
+    if (sidebarSearch.value) {
+        const q = sidebarSearch.value.toLowerCase();
+        cats = cats.filter(c => c.name.toLowerCase().includes(q));
+    }
+
+    return cats;
+});
+
 // ── Active row & navigation ─────────────────────────────────────
 
 const activeRowHash = ref(null);
@@ -83,40 +117,30 @@ const scrollActiveRowIntoView = () => {
     });
 };
 
-// ── Paint mode ──────────────────────────────────────────────────
+// ── Paint mode (Ctrl+click) ─────────────────────────────────────
 
-const paintMode = ref(false);
-const paintCategoryId = ref(null);
+const armedCategoryId = ref(null);
 const paintIsDragging = ref(false);
 
-const paintCategoryName = computed(() => {
-    if (!paintCategoryId.value) return null;
-    const cat = props.categories.find(c => c.id === paintCategoryId.value);
+const armedCategoryName = computed(() => {
+    if (!armedCategoryId.value) return null;
+    const cat = props.categories.find(c => c.id === armedCategoryId.value);
     return cat?.name ?? null;
 });
 
-const paintCategoryColor = computed(() => {
-    if (!paintCategoryId.value) return '#6B7280';
-    const cat = props.categories.find(c => c.id === paintCategoryId.value);
-    return cat?.color ?? '#6B7280';
-});
-
-const togglePaintMode = () => {
-    paintMode.value = !paintMode.value;
-    if (!paintMode.value) {
-        paintCategoryId.value = null;
-        paintIsDragging.value = false;
-    }
+const armCategory = (catId) => {
+    armedCategoryId.value = armedCategoryId.value === catId ? null : catId;
 };
 
 const paintRow = (row) => {
-    if (!paintMode.value || !paintCategoryId.value) return;
+    if (!armedCategoryId.value) return;
     if (row.status === 'transfer' || row.status === 'duplicate' || row.status === 'transfer_mirror') return;
-    categoryAssignments.value[row.hash] = paintCategoryId.value;
+    categoryAssignments.value[row.hash] = armedCategoryId.value;
+    sessionUsage.value[armedCategoryId.value] = (sessionUsage.value[armedCategoryId.value] || 0) + 1;
 };
 
 const onRowMouseDown = (row, event) => {
-    if (paintMode.value && paintCategoryId.value) {
+    if (event.ctrlKey && armedCategoryId.value) {
         paintIsDragging.value = true;
         paintRow(row);
         event.preventDefault();
@@ -133,139 +157,68 @@ const onMouseUp = () => {
     paintIsDragging.value = false;
 };
 
-// ── Category picker ─────────────────────────────────────────────
+// ── Category assignment ─────────────────────────────────────────
 
-const pickerOpenForHash = ref(null);
-const categoryType = ref('expense');
-const pickerStyle = ref({});
-const pickerSearch = ref('');
-const pickerSearchInput = ref(null);
+const assignCategory = (categoryId) => {
+    if (!activeRowHash.value) return;
+    const row = importableRows.value.find(r => r.hash === activeRowHash.value);
+    if (!row || row.status === 'transfer' || row.status === 'duplicate' || row.status === 'transfer_mirror') return;
 
-const openPicker = (row, event) => {
-    if (paintMode.value) return; // In paint mode, clicks paint — don't open picker.
-    if (row.status === 'transfer' || row.status === 'duplicate' || row.status === 'transfer_mirror') return;
-    activeRowHash.value = row.hash;
-    categoryType.value = parseFloat(row.amount) >= 0 ? 'income' : 'expense';
-    pickerSearch.value = '';
-    pickerOpenForHash.value = row.hash;
-
-    if (event) {
-        const tr = event.currentTarget;
-        const cells = tr.querySelectorAll('td');
-        const categoryCell = cells[4] || tr;
-        const rect = categoryCell.getBoundingClientRect();
-        const pickerWidth = 288;
-        const pickerHeight = 320;
-        const spaceBelow = window.innerHeight - rect.bottom;
-
-        pickerStyle.value = {
-            position: 'fixed',
-            left: Math.min(rect.left, window.innerWidth - pickerWidth - 8) + 'px',
-            top: spaceBelow > pickerHeight
-                ? rect.bottom + 4 + 'px'
-                : (rect.top - pickerHeight - 4) + 'px',
-            width: pickerWidth + 'px',
-            zIndex: 50,
-        };
-    }
-
-    nextTick(() => pickerSearchInput.value?.focus());
-};
-
-const filteredPickerCategories = computed(() => {
-    let cats = props.categories.filter(c => c.type === categoryType.value);
-    if (pickerSearch.value) {
-        const q = pickerSearch.value.toLowerCase();
-        cats = cats.filter(c => c.name.toLowerCase().includes(q));
-    }
-    return cats;
-});
-
-const assignCategory = (hash, categoryId) => {
-    categoryAssignments.value[hash] = categoryId;
-    pickerOpenForHash.value = null;
-    pickerSearch.value = '';
+    categoryAssignments.value[activeRowHash.value] = categoryId;
+    sessionUsage.value[categoryId] = (sessionUsage.value[categoryId] || 0) + 1;
+    sidebarSearch.value = '';
 
     // Auto-advance to next uncategorized row.
     nextTick(() => goToNextUncategorized());
 };
 
-const closePicker = () => {
-    if (pickerOpenForHash.value) {
-        pickerOpenForHash.value = null;
-        pickerSearch.value = '';
-    }
+const onRowClick = (row, event) => {
+    // Ctrl+click = paint mode.
+    if (event.ctrlKey && armedCategoryId.value) return;
+
+    // Normal click = select this row.
+    activeRowHash.value = row.hash;
 };
 
 // ── Keyboard handling ───────────────────────────────────────────
 
 const handleKeydown = (e) => {
-    // When picker is open: number keys, search typing, escape, enter.
-    if (pickerOpenForHash.value) {
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            closePicker();
-            return;
-        }
+    // Don't capture keys when typing in the search input.
+    const inSearch = document.activeElement === sidebarSearchInput.value;
 
-        // Enter selects the first visible category (useful after filtering).
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            const cat = filteredPickerCategories.value[0];
-            if (cat) assignCategory(pickerOpenForHash.value, cat.id);
-            return;
-        }
-
-        // Number keys 1-9, 0 to pick from visible list.
+    // Number keys assign categories (only when NOT typing in search).
+    if (!inSearch && !isNaN(parseInt(e.key))) {
         const num = parseInt(e.key);
-        if (!isNaN(num) && !pickerSearch.value) {
-            const idx = num === 0 ? 9 : num - 1;
-            const cat = filteredPickerCategories.value[idx];
-            if (cat) {
-                e.preventDefault();
-                assignCategory(pickerOpenForHash.value, cat.id);
-            }
-            return;
+        const idx = num === 0 ? 9 : num - 1;
+        const cat = sortedCategories.value[idx];
+        if (cat) {
+            e.preventDefault();
+            assignCategory(cat.id);
         }
-
-        // All other keys go to the search input (handled by the input itself).
         return;
     }
 
-    // When picker is closed:
-
-    // Tab = jump to next uncategorized row and open picker.
+    // Tab = jump to next uncategorized row.
     if (e.key === 'Tab' && !e.shiftKey) {
         if (uncategorizedRows.value.length > 0) {
             e.preventDefault();
-            const row = uncategorizedRows.value[0];
-            activeRowHash.value = row.hash;
-            scrollActiveRowIntoView();
-            // Open picker with position calculated from the DOM row.
-            nextTick(() => {
-                const el = document.querySelector(`[data-hash="${row.hash}"]`);
-                if (el) openPicker(row, { currentTarget: el });
-            });
+            goToNextUncategorized();
         }
         return;
     }
 
-    // Shift+Tab = jump to previous uncategorized row.
+    // Shift+Tab = jump to last uncategorized row.
     if (e.key === 'Tab' && e.shiftKey) {
         if (uncategorizedRows.value.length > 0) {
             e.preventDefault();
             const row = uncategorizedRows.value[uncategorizedRows.value.length - 1];
             activeRowHash.value = row.hash;
             scrollActiveRowIntoView();
-            nextTick(() => {
-                const el = document.querySelector(`[data-hash="${row.hash}"]`);
-                if (el) openPicker(row, { currentTarget: el });
-            });
         }
         return;
     }
 
-    // Arrow keys navigate ALL rows (including assigned ones).
+    // Arrow keys navigate all rows.
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         const rows = currentSectionRows.value;
@@ -282,26 +235,32 @@ const handleKeydown = (e) => {
         return;
     }
 
-    // Enter opens picker on active row.
-    if (e.key === 'Enter' && activeRowHash.value) {
+    // "/" focuses the sidebar search.
+    if (e.key === '/' && !inSearch) {
         e.preventDefault();
-        const row = importableRows.value.find(r => r.hash === activeRowHash.value);
-        if (row) {
-            const el = document.querySelector(`[data-hash="${row.hash}"]`);
-            openPicker(row, el ? { currentTarget: el } : null);
+        sidebarSearchInput.value?.focus();
+        return;
+    }
+
+    // Escape blurs search if focused, or clears armed category.
+    if (e.key === 'Escape') {
+        if (inSearch) {
+            sidebarSearch.value = '';
+            sidebarSearchInput.value?.blur();
+        } else {
+            armedCategoryId.value = null;
         }
+        return;
     }
 };
 
 onMounted(() => {
     document.addEventListener('keydown', handleKeydown);
-    document.addEventListener('mousedown', closePicker);
     document.addEventListener('mouseup', onMouseUp);
     goToNextUncategorized();
 });
 onUnmounted(() => {
     document.removeEventListener('keydown', handleKeydown);
-    document.removeEventListener('mousedown', closePicker);
     document.removeEventListener('mouseup', onMouseUp);
 });
 
@@ -380,76 +339,38 @@ const getCategoryColor = (hash) => {
             </h2>
         </template>
 
-        <div class="py-12">
-            <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
+        <div class="py-6">
+            <div class="mx-auto max-w-[90rem] px-4 sm:px-6 lg:px-8">
                 <!-- Summary tiles -->
                 <div class="mb-4 grid grid-cols-4 gap-4">
-                    <div class="rounded-md bg-green-50 p-4 text-center">
+                    <div class="rounded-md bg-green-50 p-3 text-center">
                         <div class="text-2xl font-bold text-green-700">{{ totals.new }}</div>
                         <div class="text-xs text-green-700">Nieuw</div>
                     </div>
-                    <div class="rounded-md bg-blue-50 p-4 text-center">
+                    <div class="rounded-md bg-blue-50 p-3 text-center">
                         <div class="text-2xl font-bold text-blue-700">{{ totals.transfer }}</div>
                         <div class="text-xs text-blue-700">Overboekingen</div>
                     </div>
-                    <div class="rounded-md bg-gray-100 p-4 text-center">
+                    <div class="rounded-md bg-gray-100 p-3 text-center">
                         <div class="text-2xl font-bold text-gray-700">{{ totals.mirror }}</div>
-                        <div class="text-xs text-gray-700">Spiegelregels (skip)</div>
+                        <div class="text-xs text-gray-700">Spiegel (skip)</div>
                     </div>
-                    <div class="rounded-md bg-gray-100 p-4 text-center">
+                    <div class="rounded-md bg-gray-100 p-3 text-center">
                         <div class="text-2xl font-bold text-gray-700">{{ totals.duplicate }}</div>
                         <div class="text-xs text-gray-700">Duplicaten (skip)</div>
                     </div>
                 </div>
 
-                <!-- Uncategorized counter + paint mode toggle -->
-                <div class="mb-4 flex items-center justify-between gap-4">
-                    <div v-if="uncategorizedRows.length > 0" class="flex-1 rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                <!-- Status bar -->
+                <div class="mb-4">
+                    <div v-if="uncategorizedRows.length > 0" class="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
                         <strong>{{ uncategorizedRows.length }}</strong> {{ uncategorizedRows.length === 1 ? 'transactie heeft' : 'transacties hebben' }} nog geen categorie.
-                        <span v-if="!paintMode">
-                            Klik op een rij of druk op <kbd class="rounded bg-amber-200 px-1.5 py-0.5 text-xs font-mono">Tab</kbd> om te beginnen.
-                        </span>
+                        Druk <kbd class="rounded bg-amber-200 px-1.5 py-0.5 text-xs font-mono">Tab</kbd> om te beginnen,
+                        <kbd class="rounded bg-amber-200 px-1.5 py-0.5 text-xs font-mono">1</kbd>–<kbd class="rounded bg-amber-200 px-1.5 py-0.5 text-xs font-mono">9</kbd> om toe te wijzen,
+                        of <kbd class="rounded bg-amber-200 px-1.5 py-0.5 text-xs font-mono">Ctrl+klik</kbd> om te verven.
                     </div>
-                    <div v-else class="flex-1 rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+                    <div v-else class="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-800">
                         Alle transacties hebben een categorie.
-                    </div>
-
-                    <button
-                        type="button"
-                        class="shrink-0 rounded-md px-3 py-2 text-sm font-medium transition"
-                        :class="paintMode
-                            ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-                            : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50'"
-                        @click="togglePaintMode"
-                    >
-                        🎨 Verfmodus
-                    </button>
-                </div>
-
-                <!-- Paint mode category palette -->
-                <div v-if="paintMode" class="mb-4 rounded-md border border-indigo-200 bg-indigo-50 p-3">
-                    <p class="mb-2 text-xs text-indigo-700">Kies een categorie en klik (of sleep) over rijen om ze toe te wijzen:</p>
-                    <div class="flex flex-wrap gap-1.5">
-                        <button
-                            v-for="cat in categories.filter(c => c.type === 'expense')"
-                            :key="cat.id"
-                            type="button"
-                            class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition"
-                            :class="paintCategoryId === cat.id
-                                ? 'ring-2 ring-indigo-500 ring-offset-1 bg-white text-gray-900'
-                                : 'bg-white text-gray-600 hover:bg-gray-100'"
-                            @click="paintCategoryId = cat.id"
-                            @mousedown.stop
-                        >
-                            <span
-                                class="inline-block h-2.5 w-2.5 rounded-full"
-                                :style="{ backgroundColor: cat.color }"
-                            ></span>
-                            {{ cat.name }}
-                        </button>
-                    </div>
-                    <div v-if="paintCategoryId" class="mt-2 text-xs text-indigo-600">
-                        Actief: <strong>{{ paintCategoryName }}</strong> — klik of sleep over rijen.
                     </div>
                 </div>
 
@@ -472,87 +393,151 @@ const getCategoryColor = (hash) => {
                     </button>
                 </div>
 
-                <!-- Transaction table -->
-                <div class="overflow-x-auto bg-white shadow-sm sm:rounded-lg">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Datum</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Omschrijving</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Tegenpartij</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Categorie</th>
-                                <th class="px-4 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Bedrag</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100 bg-white">
-                            <tr v-if="!sections.length || !sections[activeTab]">
-                                <td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500">
-                                    Geen transacties om te tonen.
-                                </td>
-                            </tr>
-                            <tr
-                                v-else
-                                v-for="(row, idx) in sections[activeTab].rows"
-                                :key="idx"
-                                :data-hash="row.hash"
-                                :class="[
-                                    (row.status === 'duplicate' || row.status === 'transfer_mirror') ? 'opacity-50' : '',
-                                    activeRowHash === row.hash ? 'bg-indigo-50 ring-2 ring-inset ring-indigo-300' : '',
-                                    (row.status !== 'duplicate' && row.status !== 'transfer_mirror' && !categoryAssignments[row.hash]) ? 'bg-amber-50' : '',
-                                    paintMode && paintCategoryId ? 'select-none' : '',
-                                ]"
-                                class="cursor-pointer transition-colors"
-                                @mousedown.stop="onRowMouseDown(row, $event)"
-                                @mouseenter="onRowMouseEnter(row)"
-                                @click="openPicker(row, $event)"
-                            >
-                                <td class="whitespace-nowrap px-4 py-2">
-                                    <span
-                                        class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold"
-                                        :class="statusBadge(row.status).class"
-                                    >
-                                        {{ statusBadge(row.status).label }}
-                                    </span>
-                                </td>
-                                <td class="whitespace-nowrap px-4 py-2 text-sm text-gray-700">
-                                    {{ formatDate(row.date) }}
-                                </td>
-                                <td class="px-4 py-2 text-sm text-gray-900">
-                                    <div class="truncate max-w-xs" :title="row.description">{{ row.description || '—' }}</div>
-                                </td>
-                                <td class="px-4 py-2 text-sm text-gray-500">
-                                    <div v-if="row.transfer_to_account_name" class="whitespace-nowrap text-blue-700">
-                                        ⇄ {{ row.transfer_to_account_name }}
-                                    </div>
-                                    <div v-else class="truncate max-w-[12rem]" :title="row.counterparty_name || ''">
-                                        {{ row.counterparty_name || '—' }}
-                                    </div>
-                                </td>
-                                <td class="whitespace-nowrap px-4 py-2 text-sm">
-                                    <div v-if="row.status === 'duplicate' || row.status === 'transfer_mirror'" class="text-gray-400">
-                                        —
-                                    </div>
-                                    <div v-else-if="categoryAssignments[row.hash]" class="flex items-center gap-1.5">
-                                        <span
-                                            class="inline-block h-3 w-3 rounded-full border border-gray-200"
-                                            :style="{ backgroundColor: getCategoryColor(row.hash) }"
-                                        ></span>
-                                        <span class="text-gray-700">{{ getCategoryName(row.hash) }}</span>
-                                    </div>
-                                    <div v-else class="text-amber-600 font-medium">
-                                        Kies…
-                                    </div>
-                                </td>
-                                <td
-                                    class="whitespace-nowrap px-4 py-2 pr-6 text-right text-sm font-semibold"
-                                    :class="parseFloat(row.amount) >= 0 ? 'text-green-600' : 'text-red-600'"
+                <!-- Main content: table + sidebar -->
+                <div class="flex gap-4">
+                    <!-- Transaction table -->
+                    <div class="flex-1 overflow-x-auto bg-white shadow-sm sm:rounded-lg">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Datum</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Omschrijving</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Tegenpartij</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Categorie</th>
+                                    <th class="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Bedrag</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100 bg-white">
+                                <tr v-if="!sections.length || !sections[activeTab]">
+                                    <td colspan="6" class="px-3 py-8 text-center text-sm text-gray-500">
+                                        Geen transacties om te tonen.
+                                    </td>
+                                </tr>
+                                <tr
+                                    v-else
+                                    v-for="(row, idx) in sections[activeTab].rows"
+                                    :key="idx"
+                                    :data-hash="row.hash"
+                                    :class="[
+                                        (row.status === 'duplicate' || row.status === 'transfer_mirror') ? 'opacity-50' : '',
+                                        activeRowHash === row.hash ? 'bg-indigo-50 ring-2 ring-inset ring-indigo-300' : '',
+                                        (row.status !== 'duplicate' && row.status !== 'transfer_mirror' && !categoryAssignments[row.hash]) ? 'bg-amber-50' : '',
+                                    ]"
+                                    class="cursor-pointer transition-colors select-none"
+                                    @mousedown.stop="onRowMouseDown(row, $event)"
+                                    @mouseenter="onRowMouseEnter(row)"
+                                    @click="onRowClick(row, $event)"
                                 >
-                                    {{ formatCurrency(row.amount) }}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                                    <td class="whitespace-nowrap px-3 py-2">
+                                        <span
+                                            class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold"
+                                            :class="statusBadge(row.status).class"
+                                        >
+                                            {{ statusBadge(row.status).label }}
+                                        </span>
+                                    </td>
+                                    <td class="whitespace-nowrap px-3 py-2 text-sm text-gray-700">
+                                        {{ formatDate(row.date) }}
+                                    </td>
+                                    <td class="px-3 py-2 text-sm text-gray-900">
+                                        <div class="truncate max-w-[14rem]" :title="row.description">{{ row.description || '—' }}</div>
+                                    </td>
+                                    <td class="px-3 py-2 text-sm text-gray-500">
+                                        <div v-if="row.transfer_to_account_name" class="whitespace-nowrap text-blue-700">
+                                            ⇄ {{ row.transfer_to_account_name }}
+                                        </div>
+                                        <div v-else class="truncate max-w-[10rem]" :title="row.counterparty_name || ''">
+                                            {{ row.counterparty_name || '—' }}
+                                        </div>
+                                    </td>
+                                    <td class="whitespace-nowrap px-3 py-2 text-sm">
+                                        <div v-if="row.status === 'duplicate' || row.status === 'transfer_mirror'" class="text-gray-400">
+                                            —
+                                        </div>
+                                        <div v-else-if="categoryAssignments[row.hash]" class="flex items-center gap-1.5">
+                                            <span
+                                                class="inline-block h-3 w-3 rounded-full border border-gray-200"
+                                                :style="{ backgroundColor: getCategoryColor(row.hash) }"
+                                            ></span>
+                                            <span class="text-gray-700">{{ getCategoryName(row.hash) }}</span>
+                                        </div>
+                                        <div v-else class="text-amber-600 font-medium">
+                                            Kies…
+                                        </div>
+                                    </td>
+                                    <td
+                                        class="whitespace-nowrap px-3 py-2 pr-4 text-right text-sm font-semibold"
+                                        :class="parseFloat(row.amount) >= 0 ? 'text-green-600' : 'text-red-600'"
+                                    >
+                                        {{ formatCurrency(row.amount) }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Category sidebar -->
+                    <div class="w-56 shrink-0">
+                        <div class="sticky top-20 rounded-lg bg-white shadow-sm ring-1 ring-gray-200">
+                            <div class="border-b border-gray-100 p-3">
+                                <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500">Categorieën</h3>
+                                <input
+                                    ref="sidebarSearchInput"
+                                    v-model="sidebarSearch"
+                                    type="text"
+                                    class="mt-2 w-full rounded border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    placeholder="Zoek… ( / )"
+                                />
+                            </div>
+                            <div class="max-h-[60vh] overflow-y-auto p-1">
+                                <button
+                                    v-for="(cat, catIdx) in sortedCategories"
+                                    :key="cat.id"
+                                    type="button"
+                                    class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors"
+                                    :class="[
+                                        armedCategoryId === cat.id
+                                            ? 'bg-indigo-100 ring-1 ring-indigo-400 text-indigo-900'
+                                            : 'hover:bg-gray-50 text-gray-700',
+                                    ]"
+                                    @click="assignCategory(cat.id)"
+                                    @click.ctrl.prevent="armCategory(cat.id)"
+                                    @mousedown.stop
+                                >
+                                    <span
+                                        v-if="catIdx < 10"
+                                        class="inline-flex h-4 w-4 items-center justify-center rounded text-xs font-mono text-gray-400 bg-gray-100"
+                                    >
+                                        {{ catIdx < 9 ? catIdx + 1 : 0 }}
+                                    </span>
+                                    <span v-else class="inline-block w-4"></span>
+                                    <span
+                                        class="inline-block h-3 w-3 shrink-0 rounded-full border border-gray-200"
+                                        :style="{ backgroundColor: cat.color }"
+                                    ></span>
+                                    <span class="truncate">{{ cat.name }}</span>
+                                </button>
+                                <div v-if="sortedCategories.length === 0" class="px-2 py-3 text-center text-xs text-gray-500">
+                                    Geen categorieën gevonden.
+                                </div>
+                            </div>
+                            <!-- Armed category indicator for paint mode -->
+                            <div v-if="armedCategoryId" class="border-t border-gray-100 px-3 py-2">
+                                <p class="text-xs text-indigo-700">
+                                    🎨 <strong>{{ armedCategoryName }}</strong>
+                                    <br>Ctrl+klik om te verven
+                                </p>
+                                <button
+                                    type="button"
+                                    class="mt-1 text-xs text-gray-500 hover:text-gray-700"
+                                    @click="armedCategoryId = null"
+                                >
+                                    Annuleren
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Errors -->
@@ -574,48 +559,4 @@ const getCategoryColor = (hash) => {
             </div>
         </div>
     </AuthenticatedLayout>
-
-    <!-- Category picker (Teleport to body to avoid overflow clipping) -->
-    <Teleport to="body">
-        <div
-            v-if="pickerOpenForHash"
-            class="rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5"
-            :style="pickerStyle"
-            @click.stop
-            @mousedown.stop
-        >
-            <!-- Search filter -->
-            <div class="border-b border-gray-100 p-2">
-                <input
-                    ref="pickerSearchInput"
-                    v-model="pickerSearch"
-                    type="text"
-                    class="w-full rounded border-gray-300 px-2 py-1 text-sm focus:border-indigo-500 focus:ring-indigo-500"
-                    placeholder="Zoek categorie…"
-                    @keydown.stop
-                />
-            </div>
-            <div class="max-h-60 overflow-y-auto py-1">
-                <button
-                    v-for="(cat, catIdx) in filteredPickerCategories"
-                    :key="cat.id"
-                    type="button"
-                    class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-100"
-                    @click="assignCategory(pickerOpenForHash, cat.id)"
-                >
-                    <span class="inline-flex h-4 w-4 items-center justify-center rounded text-xs font-mono text-gray-500 bg-gray-100">
-                        {{ catIdx < 9 ? catIdx + 1 : catIdx === 9 ? 0 : '' }}
-                    </span>
-                    <span
-                        class="inline-block h-3 w-3 rounded-full border border-gray-200"
-                        :style="{ backgroundColor: cat.color }"
-                    ></span>
-                    <span>{{ cat.name }}</span>
-                </button>
-                <div v-if="filteredPickerCategories.length === 0" class="px-3 py-2 text-sm text-gray-500">
-                    Geen categorieën gevonden.
-                </div>
-            </div>
-        </div>
-    </Teleport>
 </template>
