@@ -12,7 +12,7 @@ return new class extends Migration
         // Add is_system flag so system categories (Overboeking,
         // Ongecategoriseerd) can be hidden from normal management.
         Schema::table('categories', function (Blueprint $table) {
-            $table->boolean('is_system')->default(false)->after('color');
+            $table->boolean('is_system')->default(false);
         });
 
         $now = now()->toDateTimeString();
