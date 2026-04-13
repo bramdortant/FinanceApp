@@ -96,9 +96,6 @@ const closeModal = () => {
                                 <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                                     Naam
                                 </th>
-                                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                                    Hoofdcategorie
-                                </th>
                                 <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
                                     Transacties
                                 </th>
@@ -120,9 +117,6 @@ const closeModal = () => {
                                 <td class="whitespace-nowrap px-6 py-4 font-medium text-gray-900">
                                     {{ category.name }}
                                 </td>
-                                <td class="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                                    {{ category.parent?.name || '—' }}
-                                </td>
                                 <td class="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-500">
                                     {{ category.transactions_count }}
                                 </td>
@@ -135,9 +129,9 @@ const closeModal = () => {
                                     </Link>
                                     <button
                                         class="ml-3 text-sm text-red-600 hover:text-red-500"
-                                        :class="{ 'opacity-30 cursor-not-allowed': category.transactions_count > 0 || category.children_count > 0 }"
-                                        :disabled="category.transactions_count > 0 || category.children_count > 0"
-                                        :title="category.transactions_count > 0 ? 'Kan niet verwijderen: heeft transacties' : category.children_count > 0 ? 'Kan niet verwijderen: heeft subcategorieën' : 'Categorie verwijderen'"
+                                        :class="{ 'opacity-30 cursor-not-allowed': category.transactions_count > 0 }"
+                                        :disabled="category.transactions_count > 0"
+                                        :title="category.transactions_count > 0 ? 'Kan niet verwijderen: heeft transacties' : 'Categorie verwijderen'"
                                         @click="confirmDelete(category)"
                                     >
                                         Verwijderen

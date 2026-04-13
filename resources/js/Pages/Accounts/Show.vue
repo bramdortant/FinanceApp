@@ -313,8 +313,9 @@ watch(quickModalOpen, (open) => {
                         id="category_id"
                         v-model="form.category_id"
                         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        required
                     >
-                        <option :value="null">— Geen —</option>
+                        <option :value="null" disabled>Kies een categorie…</option>
                         <option v-for="c in filteredCategories" :key="c.id" :value="c.id">{{ c.name }}</option>
                     </select>
                     <InputError :message="form.errors.category_id" class="mt-2" />

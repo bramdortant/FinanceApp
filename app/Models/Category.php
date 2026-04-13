@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Category extends Model
@@ -11,19 +10,13 @@ class Category extends Model
     protected $fillable = [
         'name',
         'type',
-        'parent_id',
         'color',
+        'is_system',
     ];
 
-    public function parent(): BelongsTo
-    {
-        return $this->belongsTo(Category::class, 'parent_id');
-    }
-
-    public function children(): HasMany
-    {
-        return $this->hasMany(Category::class, 'parent_id');
-    }
+    protected $casts = [
+        'is_system' => 'boolean',
+    ];
 
     public function transactions(): HasMany
     {

@@ -612,71 +612,339 @@ Phase 4 (CSV import) and beyond.
 **Deliverable**: Upload a bank CSV and import transactions into a specific
 account.
 
-### Phase 4b: Monefy Data Migration (one-time)
-
-**Branch**: `feature/monefy-migration`
-
-This is a temporary feature to migrate your existing data from Monefy into
-the new app. It will be removed after the migration is complete.
-
-#### Strategy: Bank CSV first, then overlay Monefy categories
-
-Why this order:
-
-- Your bank export is the **source of truth** — it has every transaction
-- Monefy might have manual adjustments (moved dates, missing entries)
-- We use the bank data as the base, then use Monefy as a "cheat sheet"
-  to copy over categories you already assigned
-
-**Steps:**
-
-1. **Import bank CSVs** (using Phase 4's import feature) — this gives us
-   the complete, raw transaction history
-2. **Upload Monefy CSV export** — parse the Monefy CSV format (comma
-   delimiter, UTF-8, dot decimal)
-3. **Auto-match**: For each Monefy entry, try to find the matching bank
-   transaction by date + amount (allowing small date differences, since
-   some dates were intentionally moved)
-4. **Copy categories**: Where a match is found, copy the Monefy category
-   to the bank transaction. Create new categories as needed from Monefy's
-   category names. Note: some Monefy categories were repurposed (e.g.
-   "Bets" was used to track alcoholic beverages). Include a category
-   mapping step where these can be renamed to their intended meaning
-5. **Review unmatched**: Show a list of:
-   - Monefy entries that didn't match any bank transaction (why?)
-   - Bank transactions that have no Monefy match (uncategorized — normal
-     if Monefy didn't have them)
-6. **Manual review UI**: Let you go through unmatched items and decide
-   what to do (skip, manually match, add as manual entry)
-
-**After migration is complete**: Remove this feature branch's code or
-simply leave it unused. Since it's a separate route/page, it won't
-affect normal app usage.
-
-**Deliverable**: All historical data from Monefy + bank is merged into
-the new app with categories preserved.
-
 ### Phase 5: Transaction Categorization Workflow
 
 **Branch**: `feature/categorization`
 
-- **Uncategorized transactions view**: Filter to show only transactions
-  without a category
-- **Quick categorize**: Click a transaction → dropdown to assign category
-- **Bulk categorize**: Select multiple transactions → assign same category
-- **Category rules**: "If description contains 'Albert Heijn' → Groceries"
-  (saves manual rules for auto-matching on future imports)
-- **Correction tracking**: When a user changes a category, store the
-  correction. These corrections serve double duty: they become local
-  rules immediately, and they feed into AI context in Phase 6
+#### Part 1: Prerequisite cleanup — remove category hierarchy
+
+Phase 2 built a `parent_id` column and parent/child relationships on
+categories, anticipating a hierarchical tree display (originally planned
+as Phase 9). After re-evaluation, flat categories + transaction splitting
+(Phase 6) covers the real use case better — for example, "Alcoholische
+dranken" should be a standalone category, not a child of "Boodschappen",
+because you also buy alcohol at the liquor store. Remove:
+
+- **Migration**: Drop the `parent_id` column from `categories`
+- **Model**: Remove `parent()` and `children()` relationships from
+  `Category`; remove `parent_id` from `$fillable`
+- **Controller**: Remove `parentCategories` from `create()`/`edit()`,
+  remove `getDescendantIds()`, remove children-count guard from
+  `destroy()`, remove `->with('parent')` / `->withCount('children')`
+- **CategoryRequest**: Remove `parent_id` validation rule and
+  `wouldCreateLoop()` method
+- **Create.vue / Edit.vue**: Remove the "Hoofdcategorie" dropdown and
+  `parent_id` from the form
+- **Index.vue**: Remove the "Hoofdcategorie" column and
+  `children_count` references from the delete button
+
+#### Part 2: Make category mandatory on all transactions
+
+Every transaction must have a category — no uncategorized transactions
+in the database. This eliminates the need for a separate "uncategorized
+view" and categorization workflow after the fact.
+
+- **Migration**: Make `category_id` non-nullable on `transactions`
+  (after assigning a default to any existing uncategorized rows)
+- **System category**: Create a hidden "Overboeking" category for
+  transfers. This category does not appear in the normal category
+  management UI or in dropdowns for income/expense. Transfers get
+  this category automatically
+- **Quick-add modal**: Already has a category dropdown — no change
+  needed, just make it required
+- **Edit modal**: Category can be changed but not unset
+
+#### Part 3: Categorization during CSV import
+
+Move categorization into the import flow — assign categories on the
+preview page before confirming the import. The import cannot be
+confirmed until every row has a category.
+
+- **Category column on preview**: Each row in the CSV preview gets a
+  category picker. Auto-matched rows are pre-filled; unmatched rows
+  are highlighted and need manual assignment
+- **Keyboard-driven assignment**: The active row is highlighted.
+  Arrow keys navigate between uncategorized rows. Categories are
+  numbered (1–9, 0) for quick selection. Pressing a number assigns
+  the category and advances to the next uncategorized row
+- **Category rules**: Pattern-based auto-matching. "If description
+  contains 'Albert Heijn' → Boodschappen." Rules are applied
+  automatically during import preview — matched rows arrive
+  pre-categorized
+- **Learning over time**: Each manual assignment during import can
+  optionally create a rule ("Always categorize this as...?"). Over
+  successive imports, more and more rows are auto-matched:
+  - First import: 0% auto-matched, all manual
+  - After a few imports: 80%+ auto-matched
+  - With AI (Phase 9): 95%+ auto-matched
+
+#### Part 4: Category rule management
+
+Rules need to be editable to prevent wrong matches from persisting.
+
+- **Rule list page**: Show all rules with their pattern, target
+  category, and match count (how many transactions matched)
+- **Edit a rule**: Change the pattern or the target category
+- **Delete a rule**: Remove it entirely
+- **Override prompt**: When a user changes the category on a
+  transaction that was auto-matched by a rule, ask: "Regel
+  aanpassen, of alleen deze transactie?" (Update the rule, or
+  just this one?)
+- **Conflict detection**: If two rules could match the same
+  description, show a warning. Use the most specific match (longest
+  pattern) as the default
+- **Correction tracking**: Every manual category change (whether it
+  updates a rule or not) is stored as a correction. These feed into
+  AI context in Phase 9
 
 **README update**: Add categorization workflow overview.
 
-**Deliverable**: Efficiently categorize imported transactions.
+**Deliverable**: Every transaction has a category. CSV import includes
+inline categorization with keyboard-driven assignment and auto-matching
+rules that improve over time.
 
-### Phase 6: AI Auto-Categorization
+### Phase 5b: Rule Review Screen
+
+**Branch**: `feature/rule-review`
+
+After assigning categories to all rows on the CSV import preview, a
+second screen appears before the import is confirmed. This screen
+shows all unique counterparty/description → category assignments and
+lets the user decide which ones to save as persistent rules.
+
+- **Rule proposals**: Each unique pattern → category pair from the
+  import gets a row showing: the suggested pattern, the assigned
+  category (with color swatch), and the number of rows that matched
+- **Checkbox toggle**: Each rule is pre-checked for creation. Enter
+  toggles + advances to next row. Space toggles without advancing.
+  Arrow keys navigate between rows
+- **Pattern editing**: An edit button per row to clean up the
+  pattern (e.g. remove timestamps, store numbers from
+  "Albert Heijn Amsterdam 14:32" → "Albert Heijn")
+- **Confirm button**: Creates the selected rules and imports the
+  transactions in one action
+
+This replaces the inline "Altijd categoriseren als...?" prompt that
+was removed in Phase 5. The two-step flow keeps categorization fast
+(no interruptions) while still capturing rules.
+
+**Deliverable**: Rules are created in bulk after categorization,
+with the ability to review and edit patterns before saving.
+
+### Phase 6: Transaction Splitting
+
+**Branch**: `feature/transaction-splitting`
+
+- **Split UI**: On a transaction, click "Split" → add rows with category
+  \+ amount. Amounts must add up to the original total
+- **Split display**: In the transaction list, show split transactions
+  with their categories
+
+**Deliverable**: Split a single transaction across multiple categories.
+
+### Phase 7: Transaction Buckets
+
+**Branch**: `feature/buckets`
+
+Group transactions into named buckets to track total spending on a
+specific purpose — for example a holiday, a renovation, a birthday
+party, or a side project. Unlike categories (which are permanent and
+reusable), buckets are one-off collections tied to a specific event or
+goal.
+
+- **Bucket CRUD**: Create a bucket with a name, optional description,
+  and optional target amount (e.g. "holiday budget: € 2.000")
+- **Assign transactions**: Add existing transactions to a bucket. A
+  transaction can belong to at most one bucket (keeps the model simple;
+  revisit if needed)
+- **Bucket overview page**: Show all transactions in a bucket with a
+  running total. If a target amount was set, show progress
+- **Bucket list page**: Overview of all buckets with their totals,
+  sorted by most recent activity
+- **Dashboard integration**: Optionally show bucket totals on the
+  dashboard (Phase 10)
+
+**UI/UX — to be decided before implementation:**
+
+The assignment interaction is the key design question. Options to
+evaluate:
+
+1. **Drag-and-drop** from transaction list into a bucket sidebar or
+   drop zone — most intuitive but complex to build, especially on
+   mobile
+2. **Checkbox selection + "Toevoegen aan bucket" button** — simpler,
+   works on mobile, similar to the bulk categorize flow (Phase 5)
+3. **Per-transaction dropdown/button** — like category assignment, add
+   a "Bucket" field to the transaction detail or edit modal
+4. **Bucket-first**: open a bucket, then search/filter transactions to
+   add — good for building a bucket from scratch
+
+Decide during investigation which approach (or combination) fits best.
+Consider mobile usability — drag-and-drop may need a different
+interaction on phones.
+
+**Database**: `buckets` table (id, name, description, target_amount,
+created_at, updated_at). Add `bucket_id` nullable foreign key to
+`transactions`.
+
+**Deliverable**: Group transactions into purpose-specific buckets and
+see how much was spent on each.
+
+### Phase 8: Monefy Data Migration & Reconciliation (one-time)
+
+**Branch**: `feature/monefy-migration`
+
+A one-time feature to migrate historical data from Monefy into the app
+and reconcile it with bank transactions. The goal: after this phase,
+the database contains a correct, categorized history so that going
+forward you only need to import new bank CSVs. The migration code will
+be removed after completion.
+
+Deferred to after Phases 5–7 so the app has the tools (categories,
+splitting, buckets) to properly represent everything Monefy has.
+
+#### Critical: database backup strategy
+
+**Why this matters now**: Up to this point, the database only contained
+test data — running `php artisan migrate:fresh` or `migrate:rollback`
+was fine because nothing of value was lost. Phase 8 changes that. Each
+reconciled period represents hours of manual categorization work. If a
+migration rollback runs after real data exists, it can corrupt that
+work in ways that are hard to recover from.
+
+Specifically, the `category_id` column on `transactions` is nullable
+at the database level (SQLite cannot alter column constraints after
+creation), but the application requires it — `TransactionRequest`
+validation rejects null values. The system categories migration's
+`down()` method sets `category_id` to null for transactions that had
+system categories. After rollback, those transactions become
+uneditable through the UI because validation blocks saving without a
+category, but the database has null. You'd need manual SQL or tinker
+to fix every affected row.
+
+**Backup approach**: SQLite databases are single files — backing up is
+just copying the file. Before starting Phase 8, set up a simple backup
+routine:
+
+```bash
+# Create backups directory (one-time)
+mkdir -p database/backups
+
+# Before each period's reconciliation work:
+cp database/database.sqlite database/backups/backup-$(date +%Y%m%d-%H%M%S).sqlite
+```
+
+**When to back up**:
+
+- Before starting each period's reconciliation (Step 2)
+- Before running any new migration
+- Before any bulk data operation (imports, category reassignments)
+- After completing a period's reconciliation (checkpoint)
+
+**The rollback rule**: Once real categorized data exists in the
+database, **never use `migrate:rollback` or `migrate:fresh`**. From
+this point forward, all schema changes must be **additive** — new
+migrations that add columns, tables, or modify data forward. If a
+migration has a bug, write a new migration to fix it rather than
+rolling back. The `down()` methods in migrations are effectively dead
+code after this point.
+
+Add `database/backups/` to `.gitignore` so backup files don't bloat
+the repository.
+
+#### Prerequisite: finalize default categories
+
+After reviewing the Monefy category mapping (Step 1 below), decide on
+the final set of default categories for fresh installs. Create a seeder
+with these categories and their colors. This happens naturally after
+the mapping step, since that's when you see which Monefy categories
+were real vs repurposed.
+
+#### Step 1: Monefy import with category mapping
+
+Upload the Monefy CSV export. Before storing anything, show a
+**category mapping screen** listing every unique Monefy category with
+the number of entries that use it:
+
+```
+Monefy categorie        →  FinanceApp categorie
+─────────────────────────────────────────────────
+Boodschappen (312)       →  Boodschappen         ✓ behouden
+Transport (89)           →  Transport             ✓ behouden
+Bets (47)                →  Alcoholische dranken  ✏️ hernoemd
+Entertainment (23)       →  Entertainment         ✓ behouden
+```
+
+For each Monefy category, the user can:
+
+- **Keep** — create a new FinanceApp category with the same name
+- **Rename** — type a different name (for repurposed categories like
+  "Bets" → "Alcoholische dranken")
+- **Map to existing** — pick an existing FinanceApp category from a
+  dropdown (useful if categories were already created in Phase 5)
+
+The entry count helps spot repurposed categories: "Bets (47 entries)"
+is clearly not actual gambling. If a mapping is missed, the category
+can always be renamed later through the normal edit page.
+
+After mapping, store Monefy entries as **reference data** in a
+separate table (not in the main transactions table). These are used
+for comparison in Step 2.
+
+#### Step 2: Period-by-period reconciliation
+
+Work through the history one period at a time (month, quarter, or year
+— user picks the granularity per round):
+
+1. **Import bank CSV** for the selected period (via existing Phase 4a
+   import flow)
+2. **Comparison view**: bank transactions on one side, Monefy entries
+   on the other, with auto-matching highlighted:
+   - **Matched pairs**: same date + amount → copy the Monefy category
+     to the bank transaction
+   - **Potential splits**: multiple Monefy entries match one bank
+     transaction (same date, amounts sum to bank total) → offer to
+     create a transaction split (Phase 6) with the Monefy categories
+   - **Potential buckets**: multiple bank transactions match one Monefy
+     entry (grouped in Monefy) → offer to create a bucket (Phase 7)
+   - **Unmatched Monefy entries**: cash payments, manual entries, or
+     moved dates → skip, manually match, or add as manual transaction
+   - **Unmatched bank transactions**: no Monefy equivalent → leave
+     uncategorized (normal — Monefy didn't track everything)
+3. **Resolve** each difference and mark the period as done
+4. Move to the next period
+
+#### Step 3: Cleanup
+
+Once all periods are reconciled, the Monefy reference data and the
+reconciliation UI can be removed. The bank transactions remain as the
+actual records, now enriched with categories, splits, and buckets from
+the Monefy data.
+
+**Deliverable**: A fully categorized, reconciled transaction history
+ready for deployment. After this, only new bank CSVs need importing.
+
+### Phase 9: AI Auto-Categorization
 
 **Branch**: `feature/ai-categorization`
+
+#### Prerequisite: confidence and source tracking
+
+Add `category_confidence` (integer 0-100) and `category_source`
+(enum: manual, rule, ai) columns to `transactions`. Backfill existing
+transactions: manual assignments get confidence 100 + source "manual",
+rule-matched get confidence 100 + source "rule".
+
+This enables smart paint mode behavior in the CSV import sidebar:
+- **Skip** rows with confidence 100 + source "manual" (user chose this)
+- **Skip** rows with confidence 100 + source "rule" (trusted match)
+- **Override** rows with source "ai" and confidence < 100 (AI unsure)
+- **Always skip** transfers (system-assigned)
+
+Clicking a row manually always allows override regardless of
+confidence — that's an explicit user action.
+
+#### AI features
 
 - **OpenAI integration**: Send transaction descriptions to OpenAI, get
   suggested categories back
@@ -727,7 +995,7 @@ categorization includes three fields:
 - These thresholds are configurable and can be tuned over time based
   on actual accuracy
 
-**One-shot tracking (Phase 7 addition):**
+**One-shot tracking:**
 
 Track how often the AI gets it right without correction:
 
@@ -799,7 +1067,7 @@ configuration) and AI categorization feature overview.
 from your corrections, while keeping personal data private and defended
 against prompt injection.
 
-### Phase 7: Dashboard and Insights
+### Phase 10: Dashboard and Insights
 
 **Branch**: `feature/dashboard`
 
@@ -824,7 +1092,7 @@ Switchable chart views — same data, different perspectives:
 
 **Deliverable**: Visual insights into your spending from multiple angles.
 
-### Phase 7b: Recurring Transactions
+### Phase 10b: Recurring Transactions
 
 **Branch**: `feature/recurring-transactions`
 
@@ -838,81 +1106,14 @@ Switchable chart views — same data, different perspectives:
 
 **Deliverable**: Automated entry for regular income and expenses.
 
-### Phase 8: Transaction Splitting
+### Phase 11: UI/UX Polish — Desktop & Mobile
 
-**Branch**: `feature/transaction-splitting`
-
-- **Split UI**: On a transaction, click "Split" → add rows with category
-  - amount. Amounts must add up to the original total
-- **Split display**: In the transaction list, show split transactions
-  with their sub-categories
-
-**Deliverable**: Split a single transaction across multiple categories.
-
-### Phase 8b: Transaction Buckets
-
-**Branch**: `feature/buckets`
-
-Group transactions into named buckets to track total spending on a
-specific purpose — for example a holiday, a renovation, a birthday
-party, or a side project. Unlike categories (which are permanent and
-reusable), buckets are one-off collections tied to a specific event or
-goal.
-
-- **Bucket CRUD**: Create a bucket with a name, optional description,
-  and optional target amount (e.g. "holiday budget: € 2.000")
-- **Assign transactions**: Add existing transactions to a bucket. A
-  transaction can belong to at most one bucket (keeps the model simple;
-  revisit if needed)
-- **Bucket overview page**: Show all transactions in a bucket with a
-  running total. If a target amount was set, show progress
-- **Bucket list page**: Overview of all buckets with their totals,
-  sorted by most recent activity
-- **Dashboard integration**: Optionally show bucket totals on the
-  dashboard (Phase 7)
-
-**UI/UX — to be decided before implementation:**
-
-The assignment interaction is the key design question. Options to
-evaluate:
-
-1. **Drag-and-drop** from transaction list into a bucket sidebar or
-   drop zone — most intuitive but complex to build, especially on
-   mobile
-2. **Checkbox selection + "Toevoegen aan bucket" button** — simpler,
-   works on mobile, similar to the bulk categorize flow (Phase 5)
-3. **Per-transaction dropdown/button** — like category assignment, add
-   a "Bucket" field to the transaction detail or edit modal
-4. **Bucket-first**: open a bucket, then search/filter transactions to
-   add — good for building a bucket from scratch
-
-Decide during investigation which approach (or combination) fits best.
-Consider mobile usability — drag-and-drop may need a different
-interaction on phones.
-
-**Database**: `buckets` table (id, name, description, target_amount,
-created_at, updated_at). Add `bucket_id` nullable foreign key to
-`transactions`.
-
-**Deliverable**: Group transactions into purpose-specific buckets and
-see how much was spent on each.
-
-### Phase 9: Sub-Categories — Tree Display & Dashboard Grouping
-
-**Branch**: `feature/sub-categories`
-
-Note: Parent/child category selection, loop prevention, and deletion
-guards were already built in Phase 2. This phase adds the visual and
-analytical layers on top of that existing data model.
-
-- **Tree display**: Show categories as a collapsible tree (instead of
-  the current flat list)
-- **Dashboard grouping**: Charts can show parent-level or drill into
-  sub-categories
-
-**Deliverable**: Visual hierarchy for categories and grouped insights.
-
-### Phase 9b: UI/UX Polish — Desktop & Mobile
+> **Phase 9 (Sub-Categories) was removed.** After re-evaluation, flat
+> categories + transaction splitting (Phase 6) covers the real use cases
+> better. Example: "Alcoholische dranken" needs to be a standalone
+> category, not a child of "Boodschappen", because it's also used at
+> the liquor store. The `parent_id` column and hierarchy code were
+> removed in Phase 5.
 
 **Branch**: `feature/ui-polish`
 
@@ -975,7 +1176,7 @@ heavier flows like CSV import stay on the desktop.
 - **Nice-to-have from Phase 4a**: the inline account creation during
   CSV import (`MissingAccounts.vue`, `createAccounts()` controller
   method) may be removed if the "create account first" workflow proves
-  sufficient in practice. Evaluate during Phase 9b polish.
+  sufficient in practice. Evaluate during Phase 11 polish.
 - **Suggestion to evaluate**: replace the current category colour swatch with a
   Font Awesome (or similar) icon per category, tinted with the category's hex
   colour. Would need a `categories.icon` column, an icon picker in the category
@@ -990,7 +1191,7 @@ heavier flows like CSV import stay on the desktop.
   (responsive breakpoints, conditional components, or genuinely separate views
   where the UX diverges enough).
 - Add a PWA manifest + install prompt so the phone version feels like an app
-  (this overlaps with Phase 11 — pull it forward if it helps mobile testing).
+  (this overlaps with Phase 13 — pull it forward if it helps mobile testing).
 - Re-run the accessibility pass against any new components.
 
 **Deliverable**: An app that looks intentional rather than scaffolded, with
@@ -1001,7 +1202,7 @@ a phone experience that's actually pleasant for the daily-use flows.
 > scope here can shrink — or vice versa, if more issues have piled up, the
 > scope can grow. Update this section before starting the phase.
 
-### Phase 10: Security Audit
+### Phase 12: Security Audit
 
 **Branch**: `feature/security-audit`
 
@@ -1045,7 +1246,7 @@ on:
   and any `eval`-like patterns. Verify all user input goes through
   Form Requests.
 - **A04 Insecure Design**: Review the AI categorization design (already
-  hardened in Phase 6) and the CSV import (file upload safety, file
+  hardened in Phase 9) and the CSV import (file upload safety, file
   type validation, max size limits).
 - **A05 Security Misconfiguration**: `APP_DEBUG=false` in production,
   error pages don't leak stack traces, default Laravel routes
@@ -1063,7 +1264,7 @@ on:
   sensitive data (no full transaction objects, no IBANs, no plaintext
   decrypted values). Set up basic error logging.
 - **A10 SSRF**: Review any code that makes outbound HTTP requests
-  (the OpenAI API call in Phase 6) — make sure URLs are not user-
+  (the OpenAI API call in Phase 9) — make sure URLs are not user-
   controlled.
 
 #### Laravel-specific best practices review
@@ -1137,7 +1338,7 @@ backup procedure, security audit reference).
 **Deliverable**: A documented, audited, hardened codebase ready for
 public deployment.
 
-### Phase 11: Polish and Deployment
+### Phase 13: Polish and Deployment
 
 **Branch**: `feature/deployment`
 
@@ -1149,7 +1350,7 @@ public deployment.
 - **Phone home screen**: Add PWA manifest so it can be "installed" on
   your phone home screen
 - **Basic security**: Rate limiting, CSRF protection (Laravel has this
-  by default), auth required (most security work was done in Phase 10)
+  by default), auth required (most security work was done in Phase 12)
 - **Update admin credentials**: Change the seeded user email and
   password from the development defaults (<admin@financeapp.local> /
   password) to real credentials before deploying. Also remove the
@@ -1166,7 +1367,7 @@ public deployment.
   `production` branch. Set up GitHub branch protection rules on
   both — prevent deletion, no direct pushes, require PR reviews
 - **Backup `APP_KEY` to password manager** (separate from database
-  backup) — without this, encrypted fields are unrecoverable. Phase 10
+  backup) — without this, encrypted fields are unrecoverable. Phase 12
   audit will have already documented the procedure.
 
 **README update**: Add deployment instructions, production URL, and

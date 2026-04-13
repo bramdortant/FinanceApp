@@ -57,6 +57,12 @@ const showingNavigationDropdown = ref(false);
                                 >
                                     Importeren
                                 </NavLink>
+                                <NavLink
+                                    :href="route('category-rules.index')"
+                                    :active="route().current('category-rules.*')"
+                                >
+                                    Regels
+                                </NavLink>
                             </div>
                         </div>
 
@@ -181,6 +187,12 @@ const showingNavigationDropdown = ref(false);
                             :active="route().current('csv-imports.*')"
                         >
                             Importeren
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('category-rules.index')"
+                            :active="route().current('category-rules.*')"
+                        >
+                            Regels
                         </ResponsiveNavLink>
                     </div>
 

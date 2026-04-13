@@ -13,8 +13,8 @@ class CategoryController extends Controller
 {
     public function index(): Response
     {
-        $categories = Category::with('parent')
-            ->withCount(['transactions', 'children'])
+        $categories = Category::where('is_system', false)
+            ->withCount('transactions')
             ->orderBy('name')
             ->get();
 
@@ -25,9 +25,7 @@ class CategoryController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('Categories/Create', [
-            'parentCategories' => Category::orderBy('name')->get(['id', 'name']),
-        ]);
+        return Inertia::render('Categories/Create');
     }
 
     public function store(CategoryRequest $request): RedirectResponse
@@ -38,21 +36,24 @@ class CategoryController extends Controller
             ->with('success', 'Categorie aangemaakt.');
     }
 
-    public function edit(Category $category): Response
+    public function edit(Category $category): Response|RedirectResponse
     {
-        $excludedIds = $this->getDescendantIds($category->id);
-        $excludedIds[] = $category->id;
+        if ($category->is_system) {
+            return Redirect::route('categories.index')
+                ->with('error', 'Systeemcategorieën kunnen niet worden bewerkt.');
+        }
 
         return Inertia::render('Categories/Edit', [
-            'category' => $category->load('parent'),
-            'parentCategories' => Category::whereNotIn('id', $excludedIds)
-                ->orderBy('name')
-                ->get(['id', 'name']),
+            'category' => $category,
         ]);
     }
 
     public function update(CategoryRequest $request, Category $category): RedirectResponse
     {
+        if ($category->is_system) {
+            return Redirect::route('categories.index')
+                ->with('error', 'Systeemcategorieën kunnen niet worden bewerkt.');
+        }
         // Prevent changing income/expense type when transactions already exist —
         // it would leave them with a category whose type no longer matches.
         if (
@@ -71,14 +72,14 @@ class CategoryController extends Controller
 
     public function destroy(Category $category): RedirectResponse
     {
+        if ($category->is_system) {
+            return Redirect::route('categories.index')
+                ->with('error', 'Systeemcategorieën kunnen niet worden verwijderd.');
+        }
+
         if ($category->transactions()->exists()) {
             return Redirect::route('categories.index')
                 ->with('error', 'Kan een categorie met transacties niet verwijderen.');
-        }
-
-        if (Category::where('parent_id', $category->id)->exists()) {
-            return Redirect::route('categories.index')
-                ->with('error', 'Kan een categorie met subcategorieën niet verwijderen.');
         }
 
         $category->delete();
@@ -87,16 +88,4 @@ class CategoryController extends Controller
             ->with('success', 'Categorie verwijderd.');
     }
 
-    private function getDescendantIds(int $categoryId): array
-    {
-        $descendants = [];
-        $children = Category::where('parent_id', $categoryId)->pluck('id');
-
-        foreach ($children as $childId) {
-            $descendants[] = $childId;
-            $descendants = array_merge($descendants, $this->getDescendantIds($childId));
-        }
-
-        return $descendants;
-    }
 }

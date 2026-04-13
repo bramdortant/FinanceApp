@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\TransactionType;
 use App\Http\Requests\TransactionRequest;
 use App\Models\Account;
+use App\Models\CategoryCorrection;
 use App\Models\Transaction;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Redirect;
@@ -36,7 +37,7 @@ class TransactionController extends Controller
             'description' => $data['description'] ?? '',
             'amount' => $amount,
             'type' => $type,
-            'category_id' => $type === TransactionType::Transfer->value ? null : ($data['category_id'] ?? null),
+            'category_id' => $data['category_id'],
             'transfer_to_account_id' => $type === TransactionType::Transfer->value
                 ? $data['transfer_to_account_id']
                 : null,
@@ -53,12 +54,26 @@ class TransactionController extends Controller
         $type = $data['type'];
         $amount = $this->signedAmount((string) $data['amount'], $type);
 
+        $newCategoryId = $data['category_id'];
+        $oldCategoryId = $transaction->category_id;
+
+        // Record a correction when the category changes — this feeds into
+        // AI training data (Phase 9) so the system learns from manual edits.
+        if ($oldCategoryId !== null && (int) $newCategoryId !== (int) $oldCategoryId) {
+            CategoryCorrection::create([
+                'transaction_id' => $transaction->id,
+                'old_category_id' => $oldCategoryId,
+                'new_category_id' => $newCategoryId,
+                'description' => $transaction->description,
+            ]);
+        }
+
         $transaction->update([
             'date' => $data['date'],
             'description' => $data['description'] ?? '',
             'amount' => $amount,
             'type' => $type,
-            'category_id' => $type === TransactionType::Transfer->value ? null : ($data['category_id'] ?? null),
+            'category_id' => $newCategoryId,
             'transfer_to_account_id' => $type === TransactionType::Transfer->value
                 ? $data['transfer_to_account_id']
                 : null,
