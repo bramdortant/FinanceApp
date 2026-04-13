@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Account;
 use App\Models\Category;
+use App\Models\CategoryRule;
 use App\Services\CategoryRuleService;
 use App\Services\CsvImportService;
 use App\Services\RabobankCsvParser;
@@ -218,6 +219,9 @@ class CsvImportController extends Controller
             'token' => ['required', 'string', 'size:40'],
             'categories' => ['required', 'array'],
             'categories.*' => ['required', 'integer', 'exists:categories,id'],
+            'rules' => ['sometimes', 'array'],
+            'rules.*.match_pattern' => ['required', 'string', 'max:255'],
+            'rules.*.category_id' => ['required', 'integer', 'exists:categories,id'],
         ]);
 
         $token = $request->string('token')->toString();
@@ -240,7 +244,16 @@ class CsvImportController extends Controller
         try {
             $grouped = $this->parser->parse(Storage::path($stashPath));
 
-            DB::transaction(function () use ($grouped, $originalFilename, $categoryMap, &$totalNew, &$totalSkipped, &$firstAccountId) {
+            $rules = $request->input('rules', []);
+
+            DB::transaction(function () use ($grouped, $originalFilename, $categoryMap, $rules, &$totalNew, &$totalSkipped, &$firstAccountId) {
+                foreach ($rules as $ruleData) {
+                    CategoryRule::updateOrCreate(
+                        ['match_pattern' => $ruleData['match_pattern']],
+                        ['category_id' => $ruleData['category_id']],
+                    );
+                }
+
                 foreach ($grouped as $iban => $rows) {
                     $account = $this->service->detectAccount($iban);
                     if ($account === null) {

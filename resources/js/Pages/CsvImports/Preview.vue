@@ -14,6 +14,7 @@ const props = defineProps({
 });
 
 const activeTab = ref(0);
+const currentStep = ref('preview'); // 'preview' | 'rules'
 
 // ── Category assignments (hash → category_id) ──────────────────
 
@@ -184,6 +185,47 @@ const onRowClick = (row, event) => {
 // ── Keyboard handling ───────────────────────────────────────────
 
 const handleKeydown = (e) => {
+    // ── Rules step keyboard handling ────────────────────────────
+    if (currentStep.value === 'rules') {
+        // Don't capture keys when typing in pattern inputs.
+        if (document.activeElement?.tagName === 'INPUT') return;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (activeRuleIndex.value < ruleProposals.value.length - 1) {
+                activeRuleIndex.value++;
+            }
+            return;
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (activeRuleIndex.value > 0) {
+                activeRuleIndex.value--;
+            }
+            return;
+        }
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            toggleRule(activeRuleIndex.value);
+            if (activeRuleIndex.value < ruleProposals.value.length - 1) {
+                activeRuleIndex.value++;
+            }
+            return;
+        }
+        if (e.key === ' ') {
+            e.preventDefault();
+            toggleRule(activeRuleIndex.value);
+            return;
+        }
+        if (e.key === 'Escape') {
+            currentStep.value = 'preview';
+            return;
+        }
+        return;
+    }
+
+    // ── Preview step keyboard handling ──────────────────────────
+
     // Don't capture keys when typing in the search input.
     const inSearch = document.activeElement === sidebarSearchInput.value;
 
@@ -293,10 +335,66 @@ onUnmounted(() => {
 const form = useForm({
     token: props.token,
     categories: {},
+    rules: [],
 });
+
+// ── Rule review (Phase 5b) ─────────────────────────────────────
+
+const ruleProposals = ref([]);
+const activeRuleIndex = ref(0);
+
+const goToRuleReview = () => {
+    const groups = {};
+
+    for (const row of importableRows.value) {
+        if (row.matched_rule_id) continue;
+        if (row.status === 'transfer' || row.status === 'duplicate' || row.status === 'transfer_mirror') continue;
+
+        const catId = categoryAssignments.value[row.hash];
+        if (!catId) continue;
+
+        const pattern = (row.counterparty_name || row.description || '').trim();
+        if (!pattern) continue;
+
+        const key = `${pattern}|||${catId}`;
+        if (!groups[key]) {
+            const cat = props.categories.find(c => c.id === catId);
+            groups[key] = {
+                pattern,
+                categoryId: catId,
+                categoryName: cat?.name ?? '?',
+                categoryColor: cat?.color ?? '#6B7280',
+                matchCount: 0,
+                enabled: true,
+            };
+        }
+        groups[key].matchCount++;
+    }
+
+    ruleProposals.value = Object.values(groups)
+        .sort((a, b) => b.matchCount - a.matchCount);
+    activeRuleIndex.value = 0;
+
+    if (ruleProposals.value.length === 0) {
+        submit();
+        return;
+    }
+
+    currentStep.value = 'rules';
+};
+
+const toggleRule = (index) => {
+    ruleProposals.value[index].enabled = !ruleProposals.value[index].enabled;
+};
 
 const submit = () => {
     form.categories = { ...categoryAssignments.value };
+    form.rules = ruleProposals.value
+        .filter(p => p.enabled)
+        .map(p => ({
+            match_pattern: p.pattern,
+            category_id: p.categoryId,
+        }));
     form.post(route('csv-imports.store'));
 };
 
@@ -365,6 +463,101 @@ const getCategoryColor = (hash) => {
 
         <div class="py-6">
             <div class="mx-auto max-w-[90rem] px-4 sm:px-6 lg:px-8">
+                <!-- ═══ RULE REVIEW STEP ═══ -->
+                <div v-if="currentStep === 'rules'">
+                    <div class="mb-4 flex items-center justify-between">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">Regels aanmaken</h3>
+                            <p class="text-sm text-gray-600">
+                                Hieronder staan de patronen die je hebt toegewezen. Vink aan welke je als
+                                regel wilt opslaan — bij de volgende import worden ze automatisch toegepast.
+                            </p>
+                        </div>
+                        <SecondaryButton type="button" @click="currentStep = 'preview'">
+                            Terug
+                        </SecondaryButton>
+                    </div>
+
+                    <p class="mb-4 text-xs text-gray-500">
+                        <kbd class="rounded bg-gray-200 px-1.5 py-0.5 font-mono">↑</kbd><kbd class="rounded bg-gray-200 px-1.5 py-0.5 font-mono">↓</kbd> navigeren,
+                        <kbd class="rounded bg-gray-200 px-1.5 py-0.5 font-mono">Enter</kbd> aan/uit + volgende,
+                        <kbd class="rounded bg-gray-200 px-1.5 py-0.5 font-mono">Spatie</kbd> aan/uit,
+                        <kbd class="rounded bg-gray-200 px-1.5 py-0.5 font-mono">Esc</kbd> terug
+                    </p>
+
+                    <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="w-10 px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Opslaan</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Patroon</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Categorie</th>
+                                    <th class="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Transacties</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100 bg-white">
+                                <tr
+                                    v-for="(proposal, idx) in ruleProposals"
+                                    :key="idx"
+                                    :class="activeRuleIndex === idx ? 'bg-indigo-50 ring-2 ring-inset ring-indigo-300' : ''"
+                                    class="cursor-pointer transition-colors"
+                                    @click="activeRuleIndex = idx"
+                                >
+                                    <td class="px-3 py-2 text-center">
+                                        <input
+                                            type="checkbox"
+                                            :checked="proposal.enabled"
+                                            class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                            @change="toggleRule(idx)"
+                                            @click.stop
+                                        />
+                                    </td>
+                                    <td class="px-3 py-2">
+                                        <input
+                                            type="text"
+                                            v-model="proposal.pattern"
+                                            class="w-full rounded border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                            :class="!proposal.enabled ? 'text-gray-400 line-through' : 'text-gray-900'"
+                                            @click.stop
+                                        />
+                                    </td>
+                                    <td class="whitespace-nowrap px-3 py-2 text-sm">
+                                        <div class="flex items-center gap-1.5">
+                                            <span
+                                                class="inline-block h-3 w-3 rounded-full border border-gray-200"
+                                                :style="{ backgroundColor: proposal.categoryColor }"
+                                            ></span>
+                                            <span :class="proposal.enabled ? 'text-gray-700' : 'text-gray-400'">
+                                                {{ proposal.categoryName }}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-500">
+                                        {{ proposal.matchCount }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="mt-6 flex items-center justify-between">
+                        <p class="text-sm text-gray-500">
+                            {{ ruleProposals.filter(p => p.enabled).length }} van {{ ruleProposals.length }} regels geselecteerd
+                        </p>
+                        <div class="flex gap-3">
+                            <SecondaryButton type="button" @click="currentStep = 'preview'">
+                                Terug
+                            </SecondaryButton>
+                            <PrimaryButton :disabled="form.processing" @click="submit">
+                                Bevestig import ({{ totals.new }} nieuw)
+                            </PrimaryButton>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══ PREVIEW STEP ═══ -->
+                <div v-else>
+
                 <!-- Summary tiles -->
                 <div class="mb-4 grid grid-cols-4 gap-4">
                     <div class="rounded-md bg-green-50 p-3 text-center">
@@ -564,21 +757,23 @@ const getCategoryColor = (hash) => {
                     </div>
                 </div>
 
-                <!-- Errors -->
-                <div v-if="Object.keys(form.errors).length" class="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">
-                    <p v-for="(error, field) in form.errors" :key="field">{{ error }}</p>
-                </div>
-
                 <!-- Action buttons -->
                 <div class="mt-6 flex justify-end gap-3">
                     <Link :href="route('csv-imports.create')">
                         <SecondaryButton type="button">Annuleren</SecondaryButton>
                     </Link>
-                    <form @submit.prevent="submit">
+                    <form @submit.prevent="goToRuleReview">
                         <PrimaryButton :disabled="form.processing || !allCategorized">
                             Bevestig import ({{ totals.new }} nieuw)
                         </PrimaryButton>
                     </form>
+                </div>
+
+                </div><!-- end v-else (preview step) -->
+
+                <!-- Errors (visible in both steps) -->
+                <div v-if="Object.keys(form.errors).length" class="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">
+                    <p v-for="(error, field) in form.errors" :key="field">{{ error }}</p>
                 </div>
             </div>
         </div>
