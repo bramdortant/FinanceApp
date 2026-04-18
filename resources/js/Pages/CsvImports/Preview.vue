@@ -433,7 +433,7 @@ const submit = () => {
     form.rules = ruleProposals.value
         .filter(p => p.enabled)
         .map(p => ({
-            match_pattern: p.pattern,
+            match_pattern: p.pattern.trim(),
             category_id: p.categoryId,
         }));
     form.post(route('csv-imports.store'));

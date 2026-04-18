@@ -220,7 +220,7 @@ class CsvImportController extends Controller
             'categories' => ['required', 'array'],
             'categories.*' => ['required', 'integer', 'exists:categories,id'],
             'rules' => ['sometimes', 'array'],
-            'rules.*.match_pattern' => ['required', 'string', 'max:255'],
+            'rules.*.match_pattern' => ['required', 'string', 'max:255', 'regex:/\S/'],
             'rules.*.category_id' => ['required', 'integer', 'exists:categories,id'],
         ]);
 

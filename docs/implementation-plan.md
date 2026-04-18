@@ -1199,6 +1199,11 @@ heavier flows like CSV import stay on the desktop.
   create/edit forms, and updates anywhere a category is rendered (transaction
   list, quick-add modal, categories index). Decide during the investigation
   whether this is worth the scope.
+- **Nice-to-have from Phase 5b**: rethink pattern display on the Category
+  Rules index page. The current layout (pattern shown inline as `<code>`)
+  feels underwhelming — hard to scan, doesn't stand out. Consider a card
+  layout, better typography, or grouping by category. Revisit during the
+  visual-language investigation at the top of Phase 11.
 - **Nice-to-have from Phase 5b**: reusable category picker component. The
   native `<select>` dropdowns on the Category Rules create/edit modals (and
   anywhere else a category is picked) don't show the colour swatch or sort
