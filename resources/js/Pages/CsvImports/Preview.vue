@@ -569,10 +569,11 @@ const getCategoryColor = (hash) => {
                                             <input
                                                 type="text"
                                                 v-model="proposal.pattern"
-                                                class="w-full rounded text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                :disabled="!proposal.enabled"
+                                                class="w-full rounded text-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
                                                 :class="[
                                                     !proposal.enabled ? 'text-gray-400 line-through border-gray-300' : 'text-gray-900',
-                                                    isConflicting(proposal) ? 'border-amber-400' : 'border-gray-300',
+                                                    isConflicting(proposal) && proposal.enabled ? 'border-amber-400' : 'border-gray-300',
                                                 ]"
                                                 @click.stop
                                             />

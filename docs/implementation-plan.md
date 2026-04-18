@@ -1199,6 +1199,14 @@ heavier flows like CSV import stay on the desktop.
   create/edit forms, and updates anywhere a category is rendered (transaction
   list, quick-add modal, categories index). Decide during the investigation
   whether this is worth the scope.
+- **Nice-to-have from Phase 5b**: reusable category picker component. The
+  native `<select>` dropdowns on the Category Rules create/edit modals (and
+  anywhere else a category is picked) don't show the colour swatch or sort
+  by usage. The CSV import preview sidebar already does both. Build a single
+  `<CategoryPicker>` component that matches the sidebar: colour swatch (later
+  icon too), alphabetical-after-usage sorting, and search. Use it everywhere
+  a category is picked — rule create/edit, transaction create/edit, any
+  future forms. Consistency + less code to maintain.
 
 **Then implement**:
 
