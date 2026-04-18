@@ -20,8 +20,15 @@ const currentStep = ref('preview'); // 'preview' | 'rules'
 
 const categoryAssignments = ref({});
 
-// Track session usage to improve sorting over time within this import.
-const sessionUsage = ref({});
+// Count how many rows are currently assigned to each category.
+// Computed from the actual assignments so it stays accurate when rows are reassigned.
+const sessionUsage = computed(() => {
+    const counts = {};
+    for (const catId of Object.values(categoryAssignments.value)) {
+        counts[catId] = (counts[catId] || 0) + 1;
+    }
+    return counts;
+});
 
 const initAssignments = () => {
     const map = {};
@@ -118,6 +125,13 @@ const scrollActiveRowIntoView = () => {
     });
 };
 
+const scrollActiveRuleIntoView = () => {
+    nextTick(() => {
+        const el = document.querySelector(`[data-rule-index="${activeRuleIndex.value}"]`);
+        if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+};
+
 // ── Paint mode (Ctrl+click) ─────────────────────────────────────
 
 const armedCategoryId = ref(null);
@@ -136,8 +150,13 @@ const armCategory = (catId) => {
 const paintRow = (row) => {
     if (!armedCategoryId.value) return;
     if (row.status === 'transfer' || row.status === 'duplicate' || row.status === 'transfer_mirror') return;
+
+    // Skip rows whose type doesn't match the armed category's type.
+    const cat = props.categories.find(c => c.id === armedCategoryId.value);
+    const rowType = parseFloat(row.amount) >= 0 ? 'income' : 'expense';
+    if (cat && cat.type !== rowType) return;
+
     categoryAssignments.value[row.hash] = armedCategoryId.value;
-    sessionUsage.value[armedCategoryId.value] = (sessionUsage.value[armedCategoryId.value] || 0) + 1;
 };
 
 const onRowMouseDown = (row, event) => {
@@ -166,7 +185,6 @@ const assignCategory = (categoryId) => {
     if (!row || row.status === 'transfer' || row.status === 'duplicate' || row.status === 'transfer_mirror') return;
 
     categoryAssignments.value[activeRowHash.value] = categoryId;
-    sessionUsage.value[categoryId] = (sessionUsage.value[categoryId] || 0) + 1;
     sidebarSearch.value = '';
 
     // Auto-advance to next uncategorized row.
@@ -194,6 +212,7 @@ const handleKeydown = (e) => {
             e.preventDefault();
             if (activeRuleIndex.value < ruleProposals.value.length - 1) {
                 activeRuleIndex.value++;
+                scrollActiveRuleIntoView();
             }
             return;
         }
@@ -201,6 +220,7 @@ const handleKeydown = (e) => {
             e.preventDefault();
             if (activeRuleIndex.value > 0) {
                 activeRuleIndex.value--;
+                scrollActiveRuleIntoView();
             }
             return;
         }
@@ -209,6 +229,7 @@ const handleKeydown = (e) => {
             toggleRule(activeRuleIndex.value);
             if (activeRuleIndex.value < ruleProposals.value.length - 1) {
                 activeRuleIndex.value++;
+                scrollActiveRuleIntoView();
             }
             return;
         }
@@ -387,6 +408,26 @@ const toggleRule = (index) => {
     ruleProposals.value[index].enabled = !ruleProposals.value[index].enabled;
 };
 
+// Detect patterns that appear with multiple categories.
+const conflictingPatterns = computed(() => {
+    const patternCategories = {};
+    for (const p of ruleProposals.value) {
+        const key = p.pattern.toLowerCase();
+        if (!patternCategories[key]) patternCategories[key] = new Set();
+        patternCategories[key].add(p.categoryId);
+    }
+    const conflicts = new Set();
+    for (const [key, cats] of Object.entries(patternCategories)) {
+        if (cats.size > 1) conflicts.add(key);
+    }
+    return conflicts;
+});
+
+const hasConflicts = computed(() => conflictingPatterns.value.size > 0);
+
+const isConflicting = (proposal) =>
+    conflictingPatterns.value.has(proposal.pattern.toLowerCase());
+
 const submit = () => {
     form.categories = { ...categoryAssignments.value };
     form.rules = ruleProposals.value
@@ -485,6 +526,12 @@ const getCategoryColor = (hash) => {
                         <kbd class="rounded bg-gray-200 px-1.5 py-0.5 font-mono">Esc</kbd> terug
                     </p>
 
+                    <div v-if="hasConflicts" class="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                        <strong>Let op:</strong> Sommige patronen zijn aan meerdere categorieën toegewezen.
+                        Per patroon kan maar één regel bestaan — vink de juiste aan en zet de andere uit,
+                        of pas het patroon aan zodat ze verschillend zijn.
+                    </div>
+
                     <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg">
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
@@ -499,7 +546,12 @@ const getCategoryColor = (hash) => {
                                 <tr
                                     v-for="(proposal, idx) in ruleProposals"
                                     :key="idx"
-                                    :class="activeRuleIndex === idx ? 'bg-indigo-50 ring-2 ring-inset ring-indigo-300' : ''"
+                                    :data-rule-index="idx"
+                                    :class="[
+                                        activeRuleIndex === idx ? 'ring-2 ring-inset ring-indigo-300' : '',
+                                        isConflicting(proposal) ? 'bg-amber-50' : '',
+                                        activeRuleIndex === idx && !isConflicting(proposal) ? 'bg-indigo-50' : '',
+                                    ]"
                                     class="cursor-pointer transition-colors"
                                     @click="activeRuleIndex = idx"
                                 >
@@ -513,13 +565,25 @@ const getCategoryColor = (hash) => {
                                         />
                                     </td>
                                     <td class="px-3 py-2">
-                                        <input
-                                            type="text"
-                                            v-model="proposal.pattern"
-                                            class="w-full rounded border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                            :class="!proposal.enabled ? 'text-gray-400 line-through' : 'text-gray-900'"
-                                            @click.stop
-                                        />
+                                        <div class="flex items-center gap-2">
+                                            <input
+                                                type="text"
+                                                v-model="proposal.pattern"
+                                                class="w-full rounded text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                :class="[
+                                                    !proposal.enabled ? 'text-gray-400 line-through border-gray-300' : 'text-gray-900',
+                                                    isConflicting(proposal) ? 'border-amber-400' : 'border-gray-300',
+                                                ]"
+                                                @click.stop
+                                            />
+                                            <span
+                                                v-if="isConflicting(proposal)"
+                                                class="shrink-0 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700"
+                                                title="Dit patroon is aan meerdere categorieën toegewezen"
+                                            >
+                                                conflict
+                                            </span>
+                                        </div>
                                     </td>
                                     <td class="whitespace-nowrap px-3 py-2 text-sm">
                                         <div class="flex items-center gap-1.5">

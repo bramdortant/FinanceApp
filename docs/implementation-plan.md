@@ -742,6 +742,17 @@ with the ability to review and edit patterns before saving.
 
 **Deliverable**: Split a single transaction across multiple categories.
 
+**Nice-to-have from Phase 5b**: multi-rule split suggestion. When two
+active rules both match a transaction's description (e.g. "Albert Heijn"
+→ Boodschappen and "Albert Heijn" → Alcohol), instead of just picking
+the longest pattern, offer to split the transaction between the two
+matched categories. The user only needs to set the amounts — the
+categories are pre-filled from the rules. During CSV import, this could
+surface as a "split suggestion" on the preview screen: highlight the
+row, show both matched rules, and let the user set the split. This
+connects Phase 5's rule system with Phase 6's splitting in a way that
+reduces manual work for recurring mixed-category purchases.
+
 ### Phase 7: Transaction Buckets
 
 **Branch**: `feature/buckets`
@@ -1169,6 +1180,11 @@ heavier flows like CSV import stay on the desktop.
   step would let the user match CSV headers to our fields (date, amount,
   description, etc.), enabling support for ING, ABN AMRO, and other
   Dutch banks without writing a dedicated parser for each.
+- **Nice-to-have from Phase 5**: auto-scroll during paint mode. When
+  Ctrl+dragging to paint rows, if the user drags near the top or bottom
+  edge of the visible area, the table should automatically scroll in
+  that direction. Useful when the transaction list is taller than the
+  screen and the user wants to paint many consecutive rows at once.
 - **Nice-to-have from Phase 4a**: on the missing-accounts page, add an
   option to map an unrecognised IBAN to an existing account (e.g. if
   the user forgot to add the IBAN to an account they already created).
@@ -1257,11 +1273,24 @@ on:
   Dockerfile are recent.
 - **A07 Identification & Auth Failures**: Password requirements,
   session timeout, login rate limiting, brute-force protection.
+  Also: **disable the public registration route** (`/register` from
+  Breeze). This is a single-user app — no one should be able to
+  create an account from the internet. Remove the registration
+  controller/route entirely or wrap it behind a feature flag that
+  defaults to off in production. Consider **2FA via Laravel Fortify**
+  as an additional layer for a public-facing finance app.
 - **A08 Software & Data Integrity Failures**: Verify Composer and NPM
   use lock files (we already do). Verify no unsigned third-party
   scripts loaded at runtime.
-- **A09 Logging & Monitoring Failures**: Make sure logs don't contain
-  sensitive data (no full transaction objects, no IBANs, no plaintext
+- **A09 Logging & Monitoring Failures**: First, **decide what to log**
+  based on real usage patterns after Phases 5–10. Candidates worth
+  considering: CSV imports (filename, account, counts — already logged
+  via `csv_imports` table), rule changes (create/update/delete, who
+  changed what), category reassignments (audit trail for "why is
+  this transaction suddenly under X?"), failed login attempts, AI
+  categorization calls (request hash, confidence, whether accepted).
+  Then: make sure logs don't contain sensitive data (no full
+  transaction objects, no IBANs, no plaintext
   decrypted values). Set up basic error logging.
 - **A10 SSRF**: Review any code that makes outbound HTTP requests
   (the OpenAI API call in Phase 9) — make sure URLs are not user-
@@ -1298,6 +1327,32 @@ on:
 - Verify SQLite file permissions are restrictive (not world-readable)
 - Check that backups don't accidentally include `.env` alongside the
   database
+
+#### Network isolation (decide before deployment)
+
+Once deployed to Oracle Cloud, the app's IP is public. Bots scan the
+entire internet and will find it within hours. The login page alone
+is the attack surface — everything else is behind `auth` middleware.
+Decide how much isolation is appropriate:
+
+- **Minimum (public-facing with hardening)**: HTTPS, strong password,
+  disabled registration, rate limiting, 2FA. The app is reachable from
+  anywhere (supermarket, office, etc.) which is the main reason to
+  deploy it in the first place. This is the default path.
+- **Extra layer (VPN-only)**: Run **Tailscale** on the Oracle VM and
+  on your phone. The app binds to the Tailscale private network only —
+  no public port. Pro: basically unreachable by anyone except your
+  devices. Con: every new device you want to use the app from must
+  be enrolled in Tailscale first. Works offline-of-home-WiFi because
+  Tailscale is internet-based, not WiFi-based.
+- **Hybrid**: Public HTTPS with all hardening above, AND Tailscale as
+  an optional private route. Belt and suspenders.
+
+The right choice depends on how paranoid you want to be and how much
+friction is acceptable when using the app from new devices. For a
+personal finance app with auth + 2FA + rate limiting, fully public
+is defensible. Tailscale is a strong "why not" addition if the setup
+is low-friction.
 
 #### Backup & recovery procedures
 
