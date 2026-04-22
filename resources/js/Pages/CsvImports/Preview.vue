@@ -425,11 +425,16 @@ const toggleRule = (index) => {
     ruleProposals.value[index].enabled = !ruleProposals.value[index].enabled;
 };
 
-// Detect patterns that appear with multiple categories.
+// Detect patterns that appear with multiple categories. Keys are normalized
+// the same way the backend stores them (trimmed + lowercased) so warnings
+// match what would actually happen on submit. Disabled proposals are skipped
+// because they won't be saved.
 const conflictingPatterns = computed(() => {
     const patternCategories = {};
     for (const p of ruleProposals.value) {
-        const key = p.pattern.toLowerCase();
+        if (!p.enabled) continue;
+        const key = p.pattern.trim().toLowerCase();
+        if (!key) continue;
         if (!patternCategories[key]) patternCategories[key] = new Set();
         patternCategories[key].add(p.categoryId);
     }
@@ -442,8 +447,10 @@ const conflictingPatterns = computed(() => {
 
 const hasConflicts = computed(() => conflictingPatterns.value.size > 0);
 
-const isConflicting = (proposal) =>
-    conflictingPatterns.value.has(proposal.pattern.toLowerCase());
+const isConflicting = (proposal) => {
+    if (!proposal.enabled) return false;
+    return conflictingPatterns.value.has(proposal.pattern.trim().toLowerCase());
+};
 
 // Detect enabled proposals whose pattern is empty or whitespace-only.
 const isEmptyPattern = (proposal) =>
@@ -599,7 +606,7 @@ const getCategoryColor = (hash) => {
                                                 :class="[
                                                     !proposal.enabled ? 'text-gray-400 line-through border-gray-300' : 'text-gray-900',
                                                     isEmptyPattern(proposal) ? 'border-red-400' :
-                                                        (isConflicting(proposal) && proposal.enabled ? 'border-amber-400' : 'border-gray-300'),
+                                                        (isConflicting(proposal) ? 'border-amber-400' : 'border-gray-300'),
                                                 ]"
                                                 @click.stop
                                             />
