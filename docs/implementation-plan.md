@@ -740,6 +740,16 @@ with the ability to review and edit patterns before saving.
 - **Split display**: In the transaction list, show split transactions
   with their categories
 
+**Validation strategy** (defense-in-depth, lesson from Phase 5b):
+- **Frontend live**: as the user edits split amounts, show a running
+  remaining/over indicator. Disable submit when sum ≠ original.
+- **Backend**: validate sum equality in `TransactionSplitRequest`.
+  Don't trust the frontend math — a malformed client could submit
+  splits that don't sum.
+- **Database** (added in Phase 8 schema hardening): consider a CHECK
+  constraint or a trigger that enforces sum equality at the DB layer.
+  At minimum a `NOT NULL` on `amount` per split row.
+
 **Deliverable**: Split a single transaction across multiple categories.
 
 **Nice-to-have from Phase 5b**: multi-rule split suggestion. When two
@@ -751,7 +761,11 @@ categories are pre-filled from the rules. During CSV import, this could
 surface as a "split suggestion" on the preview screen: highlight the
 row, show both matched rules, and let the user set the split. This
 connects Phase 5's rule system with Phase 6's splitting in a way that
-reduces manual work for recurring mixed-category purchases.
+reduces manual work for recurring mixed-category purchases. Note: this
+only works correctly because the matcher (fixed in Phase 5b) now
+considers `counterparty_name` — without that fix, most rules wouldn't
+even match the second time around, so the "two rules match" scenario
+would be extremely rare.
 
 ### Phase 7: Transaction Buckets
 
@@ -764,7 +778,12 @@ reusable), buckets are one-off collections tied to a specific event or
 goal.
 
 - **Bucket CRUD**: Create a bucket with a name, optional description,
-  and optional target amount (e.g. "holiday budget: € 2.000")
+  and optional target amount (e.g. "holiday budget: € 2.000"). Bucket
+  names follow the same uniqueness pattern as `CategoryRule.match_pattern`
+  (introduced in Phase 5b): case-insensitive uniqueness with display
+  case preserved. Use a `Bucket::upsertByName()` helper modelled on
+  `CategoryRule::upsertByPattern()`. If we end up with a third use case
+  (Phase 10b's recurring transactions), extract a trait/concern.
 - **Assign transactions**: Add existing transactions to a bucket. A
   transaction can belong to at most one bucket (keeps the model simple;
   revisit if needed)
@@ -813,6 +832,18 @@ be removed after completion.
 
 Deferred to after Phases 5–7 so the app has the tools (categories,
 splitting, buckets) to properly represent everything Monefy has.
+
+**Critical dependency from Phase 5b**: The CategoryRuleService matcher
+now correctly searches `description + original_description +
+counterparty_name`. This was a bug fix during Phase 5b — the matcher
+previously only searched description fields, which for Rabobank CSVs
+meant rules almost never matched (the merchant identity lives in
+`counterparty_name`). This entire phase's auto-categorization depends
+on the matcher working correctly: thousands of historical transactions
+will be auto-matched against the rules built up during the migration.
+If the matcher were still broken, the migration would silently
+mis-categorize most rows. Verify the matcher behaviour with a small
+test import before starting the bulk Monefy work.
 
 #### Critical: database backup strategy
 
@@ -992,7 +1023,12 @@ confidence — that's an explicit user action.
 - **Interactive learning**: When you manually change a category, this
   automatically creates a local rule (Phase 5) AND gets stored as
   correction context for future AI prompts. Over time, the system
-  shifts from AI-heavy to rule-heavy as patterns are learned
+  shifts from AI-heavy to rule-heavy as patterns are learned. **Always
+  go through `CategoryRule::upsertByPattern()`** (introduced in
+  Phase 5b) — never call `CategoryRule::create()` directly. The helper
+  enforces case-insensitive uniqueness while preserving display case.
+  Bypassing it would re-introduce the duplicate-rule risk that 5b
+  closed
 - **Confidence display**: Show how sure the AI is (high confidence =
   auto-assign, low confidence = ask the user)
 
@@ -1136,7 +1172,11 @@ Switchable chart views — same data, different perspectives:
 **Branch**: `feature/recurring-transactions`
 
 - **Create recurring transaction**: Set up repeating entries (rent, salary,
-  subscriptions) with a schedule (weekly, monthly, yearly)
+  subscriptions) with a schedule (weekly, monthly, yearly). The recurring
+  template has a `name` field — apply the same case-insensitive uniqueness
+  pattern as `CategoryRule.match_pattern` (Phase 5b) and `Bucket.name`
+  (Phase 7). If Phase 7 already extracted a trait/concern, reuse it; this
+  is the third use case so the trait is now justified.
 - **Auto-create**: Recurring transactions are automatically added on their
   scheduled date
 - **Manage recurring**: List, edit, pause, or delete recurring entries
@@ -1166,6 +1206,13 @@ heavier flows like CSV import stay on the desktop.
 
 - Walk every page on desktop and on a real phone (or devtools mobile emulation).
   Capture screenshots, list everything that feels clunky, cramped, or ugly.
+- **Per-page checklist** (lesson from Phase 5b): for each page that has
+  validation/warnings/conflict-detection, verify "write-path consistency" —
+  the rules used to compute UI warnings must use the same normalization
+  (`trim`, `toLowerCase`, etc.) as what actually reaches the database.
+  Otherwise the UI lies to the user. The Phase 5b conflict-detection bug
+  (warning didn't trigger for trailing-whitespace duplicates that the
+  backend silently collapsed) is the canonical example.
 - Decide per page whether the mobile UX should mirror the desktop layout
   or diverge. Examples to think through:
   - Account show page: action buttons should be large thumb-targets at the
@@ -1178,6 +1225,29 @@ heavier flows like CSV import stay on the desktop.
   recent activity).
 - Pick a small visual language to commit to: spacing scale, typography, colour
   accents, button hierarchy, empty-state illustrations.
+**Accumulated nice-to-haves to triage during this phase** (loosely
+grouped — prioritize during the Phase 11 investigation):
+
+*Visual / UX polish:*
+- Auto-scroll during paint mode (Phase 5)
+- Font Awesome icons per category (Phase 11 suggestion)
+- Pattern display redesign on Category Rules index (Phase 5b)
+- Cross-source duplicate detection — manual ↔ CSV (Phase 5b)
+- Map IBAN to existing account on missing-accounts page (Phase 4a)
+
+*Refactors / architectural decisions:*
+- Reusable `<CategoryPicker>` component (Phase 5b)
+- Race-condition-safe duplicate protection (Phase 4a)
+- Cross-CSV transfer deduplication (Phase 4a)
+- Stashed-CSV cleanup as scheduled command (Phase 4a)
+- Decide whether to remove inline account creation in CSV import (Phase 4a)
+
+*New features:*
+- Watch-folder CSV import (Phase 4a)
+- Flexible column mapping for non-Rabobank CSVs (Phase 4a)
+
+The detailed descriptions for each follow:
+
 - **Nice-to-have from Phase 4a**: race-condition-safe duplicate protection.
   Add a unique constraint on `transactions(account_id, csv_import_hash)` and
   switch the import insert path to insert-ignore / upsert semantics. Not
@@ -1232,6 +1302,18 @@ heavier flows like CSV import stay on the desktop.
   feels underwhelming — hard to scan, doesn't stand out. Consider a card
   layout, better typography, or grouping by category. Revisit during the
   visual-language investigation at the top of Phase 11.
+- **Nice-to-have from Phase 5b**: cross-source duplicate detection.
+  Currently the CSV import only flags duplicates against previously-imported
+  CSV rows (via `csv_import_hash`). Manual transactions are invisible to
+  this check, so adding "Albert Heijn €23.45" by hand on your phone and
+  later importing the bank CSV creates two transactions for the same
+  purchase. Solution: during preview, also fuzzy-match each new CSV row
+  against existing manual transactions on `account_id + date (±1 day)
+  + amount`. Don't auto-skip — flag as "Mogelijk duplicaat" with a
+  decision per row (skip / keep / merge). False positives are real
+  (you might legitimately spend €23.45 twice on the same day at the
+  same shop), so the user must always be in control. This becomes
+  acute in steady-state daily use, post-Phase 8.
 - **Nice-to-have from Phase 5b**: reusable category picker component. The
   native `<select>` dropdowns on the Category Rules create/edit modals (and
   anywhere else a category is picked) don't show the colour swatch or sort
@@ -1304,7 +1386,13 @@ on:
   Form Requests.
 - **A04 Insecure Design**: Review the AI categorization design (already
   hardened in Phase 9) and the CSV import (file upload safety, file
-  type validation, max size limits).
+  type validation, max size limits). **Also audit every model for the
+  pattern `Model::create(['unique_field' => $userInput])`** — any such
+  call risks creating duplicates if a `findBy*` / `upsertBy*` helper
+  was added later but a code path was missed. The CategoryRule model
+  has `upsertByPattern` (Phase 5b); Bucket likely has `upsertByName`
+  (Phase 7); recurring transactions likely too (Phase 10b). Grep for
+  direct `::create()` calls and verify they don't bypass the helper.
 - **A05 Security Misconfiguration**: `APP_DEBUG=false` in production,
   error pages don't leak stack traces, default Laravel routes
   (`/telescope`, `/horizon` etc.) are disabled or protected, version
