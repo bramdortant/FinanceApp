@@ -19,10 +19,12 @@ class CategoryRuleService
     /**
      * Find the best matching rule for a transaction description.
      */
-    public function match(string $description, ?string $originalDescription = null): ?CategoryRule
+    public function match(string $description, ?string $originalDescription = null, ?string $counterpartyName = null): ?CategoryRule
     {
         $rules = CategoryRule::with('category')->get();
-        $searchText = mb_strtolower($description . ' ' . ($originalDescription ?? ''));
+        $searchText = mb_strtolower(
+            $description . ' ' . ($originalDescription ?? '') . ' ' . ($counterpartyName ?? '')
+        );
 
         return $this->findBestMatch($searchText, $rules);
     }
@@ -43,7 +45,9 @@ class CategoryRuleService
 
         foreach ($rows as &$row) {
             $searchText = mb_strtolower(
-                ($row['description'] ?? '') . ' ' . ($row['original_description'] ?? '')
+                ($row['description'] ?? '') . ' '
+                . ($row['original_description'] ?? '') . ' '
+                . ($row['counterparty_name'] ?? '')
             );
 
             $bestMatch = $this->findBestMatch($searchText, $rules);

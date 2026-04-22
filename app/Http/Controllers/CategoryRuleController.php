@@ -8,7 +8,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Redirect;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -57,18 +56,16 @@ class CategoryRuleController extends Controller
     public function store(Request $request): JsonResponse|RedirectResponse
     {
         $validated = $request->validate([
-            'match_pattern' => ['required', 'string', 'max:255'],
+            'match_pattern' => ['required', 'string', 'max:255', 'regex:/\S/'],
             'category_id' => ['required', 'exists:categories,id'],
         ]);
 
-        $existing = CategoryRule::where('match_pattern', $validated['match_pattern'])->first();
+        $existing = CategoryRule::findByPattern($validated['match_pattern']);
 
-        if ($existing) {
-            $existing->update(['category_id' => $validated['category_id']]);
-            $rule = $existing->load('category');
-        } else {
-            $rule = CategoryRule::create($validated)->load('category');
-        }
+        $rule = CategoryRule::upsertByPattern(
+            $validated['match_pattern'],
+            $validated['category_id'],
+        )->load('category');
 
         if ($request->wantsJson()) {
             return response()->json(['rule' => $rule], $existing ? 200 : 201);
@@ -82,8 +79,15 @@ class CategoryRuleController extends Controller
     {
         $validated = $request->validate([
             'match_pattern' => [
-                'required', 'string', 'max:255',
-                Rule::unique('category_rules')->ignore($categoryRule->id),
+                'required', 'string', 'max:255', 'regex:/\S/',
+                function ($attribute, $value, $fail) use ($categoryRule) {
+                    $duplicate = CategoryRule::whereRaw('LOWER(match_pattern) = ?', [mb_strtolower($value)])
+                        ->where('id', '!=', $categoryRule->id)
+                        ->exists();
+                    if ($duplicate) {
+                        $fail('Een regel met dit patroon bestaat al (hoofdletters worden genegeerd).');
+                    }
+                },
             ],
             'category_id' => ['required', 'exists:categories,id'],
         ]);

@@ -742,6 +742,17 @@ with the ability to review and edit patterns before saving.
 
 **Deliverable**: Split a single transaction across multiple categories.
 
+**Nice-to-have from Phase 5b**: multi-rule split suggestion. When two
+active rules both match a transaction's description (e.g. "Albert Heijn"
+→ Boodschappen and "Albert Heijn" → Alcohol), instead of just picking
+the longest pattern, offer to split the transaction between the two
+matched categories. The user only needs to set the amounts — the
+categories are pre-filled from the rules. During CSV import, this could
+surface as a "split suggestion" on the preview screen: highlight the
+row, show both matched rules, and let the user set the split. This
+connects Phase 5's rule system with Phase 6's splitting in a way that
+reduces manual work for recurring mixed-category purchases.
+
 ### Phase 7: Transaction Buckets
 
 **Branch**: `feature/buckets`
@@ -851,6 +862,34 @@ code after this point.
 
 Add `database/backups/` to `.gitignore` so backup files don't bloat
 the repository.
+
+#### Prerequisite: schema hardening (DB-level integrity constraints)
+
+Before real data lands, do a schema audit. Most validation today lives
+in Laravel Form Requests and controller validators — which protects
+against user input but NOT against bugs, direct SQL, or future code
+paths that skip the validator. SQLite's `ALTER TABLE` is limited, so
+adding constraints gets painful once a table has real rows. This is
+the last easy window.
+
+Candidates to push down to the DB layer:
+
+- `category_rules.match_pattern`: `CHECK (LENGTH(TRIM(match_pattern)) > 0)`
+  — mirrors the app's `regex:/\S/` rule at the DB layer
+- `category_rules`: expression unique index on `LOWER(match_pattern)` —
+  enforces case-insensitive uniqueness at the DB layer (today only
+  guarded by `CategoryRule::upsertByPattern`; any future write path
+  that skips the helper could still insert duplicates)
+- `NOT NULL` audit across all tables — any column the app never writes
+  null to should probably have `NOT NULL` at the DB layer too. The
+  known gap: `transactions.category_id` is nullable because Phase 5
+  couldn't alter the column in SQLite. Revisit during this audit.
+- Foreign key `ON DELETE` behavior audit — decide CASCADE vs SET NULL
+  vs RESTRICT per relationship. Today most are defaults.
+
+Each constraint needs a migration and will require a table-rewrite on
+SQLite. Do them as a batch here (one migration per table), verified on
+a seeded test DB, then committed before the first Monefy import.
 
 #### Prerequisite: finalize default categories
 
@@ -1169,6 +1208,11 @@ heavier flows like CSV import stay on the desktop.
   step would let the user match CSV headers to our fields (date, amount,
   description, etc.), enabling support for ING, ABN AMRO, and other
   Dutch banks without writing a dedicated parser for each.
+- **Nice-to-have from Phase 5**: auto-scroll during paint mode. When
+  Ctrl+dragging to paint rows, if the user drags near the top or bottom
+  edge of the visible area, the table should automatically scroll in
+  that direction. Useful when the transaction list is taller than the
+  screen and the user wants to paint many consecutive rows at once.
 - **Nice-to-have from Phase 4a**: on the missing-accounts page, add an
   option to map an unrecognised IBAN to an existing account (e.g. if
   the user forgot to add the IBAN to an account they already created).
@@ -1183,6 +1227,19 @@ heavier flows like CSV import stay on the desktop.
   create/edit forms, and updates anywhere a category is rendered (transaction
   list, quick-add modal, categories index). Decide during the investigation
   whether this is worth the scope.
+- **Nice-to-have from Phase 5b**: rethink pattern display on the Category
+  Rules index page. The current layout (pattern shown inline as `<code>`)
+  feels underwhelming — hard to scan, doesn't stand out. Consider a card
+  layout, better typography, or grouping by category. Revisit during the
+  visual-language investigation at the top of Phase 11.
+- **Nice-to-have from Phase 5b**: reusable category picker component. The
+  native `<select>` dropdowns on the Category Rules create/edit modals (and
+  anywhere else a category is picked) don't show the colour swatch or sort
+  by usage. The CSV import preview sidebar already does both. Build a single
+  `<CategoryPicker>` component that matches the sidebar: colour swatch (later
+  icon too), alphabetical-after-usage sorting, and search. Use it everywhere
+  a category is picked — rule create/edit, transaction create/edit, any
+  future forms. Consistency + less code to maintain.
 
 **Then implement**:
 
@@ -1257,11 +1314,24 @@ on:
   Dockerfile are recent.
 - **A07 Identification & Auth Failures**: Password requirements,
   session timeout, login rate limiting, brute-force protection.
+  Also: **disable the public registration route** (`/register` from
+  Breeze). This is a single-user app — no one should be able to
+  create an account from the internet. Remove the registration
+  controller/route entirely or wrap it behind a feature flag that
+  defaults to off in production. Consider **2FA via Laravel Fortify**
+  as an additional layer for a public-facing finance app.
 - **A08 Software & Data Integrity Failures**: Verify Composer and NPM
   use lock files (we already do). Verify no unsigned third-party
   scripts loaded at runtime.
-- **A09 Logging & Monitoring Failures**: Make sure logs don't contain
-  sensitive data (no full transaction objects, no IBANs, no plaintext
+- **A09 Logging & Monitoring Failures**: First, **decide what to log**
+  based on real usage patterns after Phases 5–10. Candidates worth
+  considering: CSV imports (filename, account, counts — already logged
+  via `csv_imports` table), rule changes (create/update/delete, who
+  changed what), category reassignments (audit trail for "why is
+  this transaction suddenly under X?"), failed login attempts, AI
+  categorization calls (request hash, confidence, whether accepted).
+  Then: make sure logs don't contain sensitive data (no full
+  transaction objects, no IBANs, no plaintext
   decrypted values). Set up basic error logging.
 - **A10 SSRF**: Review any code that makes outbound HTTP requests
   (the OpenAI API call in Phase 9) — make sure URLs are not user-
@@ -1298,6 +1368,32 @@ on:
 - Verify SQLite file permissions are restrictive (not world-readable)
 - Check that backups don't accidentally include `.env` alongside the
   database
+
+#### Network isolation (decide before deployment)
+
+Once deployed to Oracle Cloud, the app's IP is public. Bots scan the
+entire internet and will find it within hours. The login page alone
+is the attack surface — everything else is behind `auth` middleware.
+Decide how much isolation is appropriate:
+
+- **Minimum (public-facing with hardening)**: HTTPS, strong password,
+  disabled registration, rate limiting, 2FA. The app is reachable from
+  anywhere (supermarket, office, etc.) which is the main reason to
+  deploy it in the first place. This is the default path.
+- **Extra layer (VPN-only)**: Run **Tailscale** on the Oracle VM and
+  on your phone. The app binds to the Tailscale private network only —
+  no public port. Pro: basically unreachable by anyone except your
+  devices. Con: every new device you want to use the app from must
+  be enrolled in Tailscale first. Works offline-of-home-WiFi because
+  Tailscale is internet-based, not WiFi-based.
+- **Hybrid**: Public HTTPS with all hardening above, AND Tailscale as
+  an optional private route. Belt and suspenders.
+
+The right choice depends on how paranoid you want to be and how much
+friction is acceptable when using the app from new devices. For a
+personal finance app with auth + 2FA + rate limiting, fully public
+is defensible. Tailscale is a strong "why not" addition if the setup
+is low-friction.
 
 #### Backup & recovery procedures
 

@@ -14,13 +14,21 @@ const props = defineProps({
 });
 
 const activeTab = ref(0);
+const currentStep = ref('preview'); // 'preview' | 'rules'
 
 // ── Category assignments (hash → category_id) ──────────────────
 
 const categoryAssignments = ref({});
 
-// Track session usage to improve sorting over time within this import.
-const sessionUsage = ref({});
+// Count how many rows are currently assigned to each category.
+// Computed from the actual assignments so it stays accurate when rows are reassigned.
+const sessionUsage = computed(() => {
+    const counts = {};
+    for (const catId of Object.values(categoryAssignments.value)) {
+        counts[catId] = (counts[catId] || 0) + 1;
+    }
+    return counts;
+});
 
 const initAssignments = () => {
     const map = {};
@@ -117,6 +125,13 @@ const scrollActiveRowIntoView = () => {
     });
 };
 
+const scrollActiveRuleIntoView = () => {
+    nextTick(() => {
+        const el = document.querySelector(`[data-rule-index="${activeRuleIndex.value}"]`);
+        if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+};
+
 // ── Paint mode (Ctrl+click) ─────────────────────────────────────
 
 const armedCategoryId = ref(null);
@@ -135,8 +150,13 @@ const armCategory = (catId) => {
 const paintRow = (row) => {
     if (!armedCategoryId.value) return;
     if (row.status === 'transfer' || row.status === 'duplicate' || row.status === 'transfer_mirror') return;
+
+    // Skip rows whose type doesn't match the armed category's type.
+    const cat = props.categories.find(c => c.id === armedCategoryId.value);
+    const rowType = parseFloat(row.amount) >= 0 ? 'income' : 'expense';
+    if (cat && cat.type !== rowType) return;
+
     categoryAssignments.value[row.hash] = armedCategoryId.value;
-    sessionUsage.value[armedCategoryId.value] = (sessionUsage.value[armedCategoryId.value] || 0) + 1;
 };
 
 const onRowMouseDown = (row, event) => {
@@ -165,7 +185,6 @@ const assignCategory = (categoryId) => {
     if (!row || row.status === 'transfer' || row.status === 'duplicate' || row.status === 'transfer_mirror') return;
 
     categoryAssignments.value[activeRowHash.value] = categoryId;
-    sessionUsage.value[categoryId] = (sessionUsage.value[categoryId] || 0) + 1;
     sidebarSearch.value = '';
 
     // Auto-advance to next uncategorized row.
@@ -184,6 +203,58 @@ const onRowClick = (row, event) => {
 // ── Keyboard handling ───────────────────────────────────────────
 
 const handleKeydown = (e) => {
+    // ── Rules step keyboard handling ────────────────────────────
+    if (currentStep.value === 'rules') {
+        // While typing in a pattern input, most shortcuts must pass through
+        // to the input (arrow keys move the cursor, space inserts a space).
+        // Escape is the exception — blur the input and exit to preview.
+        if (document.activeElement?.tagName === 'INPUT') {
+            if (e.key === 'Escape') {
+                document.activeElement.blur();
+                currentStep.value = 'preview';
+            }
+            return;
+        }
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (activeRuleIndex.value < ruleProposals.value.length - 1) {
+                activeRuleIndex.value++;
+                scrollActiveRuleIntoView();
+            }
+            return;
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (activeRuleIndex.value > 0) {
+                activeRuleIndex.value--;
+                scrollActiveRuleIntoView();
+            }
+            return;
+        }
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            toggleRule(activeRuleIndex.value);
+            if (activeRuleIndex.value < ruleProposals.value.length - 1) {
+                activeRuleIndex.value++;
+                scrollActiveRuleIntoView();
+            }
+            return;
+        }
+        if (e.key === ' ') {
+            e.preventDefault();
+            toggleRule(activeRuleIndex.value);
+            return;
+        }
+        if (e.key === 'Escape') {
+            currentStep.value = 'preview';
+            return;
+        }
+        return;
+    }
+
+    // ── Preview step keyboard handling ──────────────────────────
+
     // Don't capture keys when typing in the search input.
     const inSearch = document.activeElement === sidebarSearchInput.value;
 
@@ -293,10 +364,110 @@ onUnmounted(() => {
 const form = useForm({
     token: props.token,
     categories: {},
+    rules: [],
 });
+
+// ── Rule review (Phase 5b) ─────────────────────────────────────
+
+const ruleProposals = ref([]);
+const activeRuleIndex = ref(0);
+
+const goToRuleReview = () => {
+    const groups = {};
+
+    // Index prior proposals by originalPattern + categoryId — these keys are
+    // derived from row data and stay stable even if the user edited the
+    // displayed pattern. Lets us carry over enabled/pattern across round-trips.
+    const prior = new Map(
+        ruleProposals.value.map(p => [`${p.originalPattern}|||${p.categoryId}`, p])
+    );
+
+    for (const row of importableRows.value) {
+        if (row.matched_rule_id) continue;
+        if (row.status === 'transfer' || row.status === 'duplicate' || row.status === 'transfer_mirror') continue;
+
+        const catId = categoryAssignments.value[row.hash];
+        if (!catId) continue;
+
+        const pattern = (row.counterparty_name || row.description || '').trim();
+        if (!pattern) continue;
+
+        const key = `${pattern}|||${catId}`;
+        if (!groups[key]) {
+            const cat = props.categories.find(c => c.id === catId);
+            const prev = prior.get(key);
+            groups[key] = {
+                originalPattern: pattern,
+                pattern: prev?.pattern ?? pattern,
+                categoryId: catId,
+                categoryName: cat?.name ?? '?',
+                categoryColor: cat?.color ?? '#6B7280',
+                matchCount: 0,
+                enabled: prev?.enabled ?? true,
+            };
+        }
+        groups[key].matchCount++;
+    }
+
+    ruleProposals.value = Object.values(groups)
+        .sort((a, b) => b.matchCount - a.matchCount);
+    activeRuleIndex.value = 0;
+
+    if (ruleProposals.value.length === 0) {
+        submit();
+        return;
+    }
+
+    currentStep.value = 'rules';
+};
+
+const toggleRule = (index) => {
+    ruleProposals.value[index].enabled = !ruleProposals.value[index].enabled;
+};
+
+// Detect patterns that appear with multiple categories. Keys are normalized
+// the same way the backend stores them (trimmed + lowercased) so warnings
+// match what would actually happen on submit. Disabled proposals are skipped
+// because they won't be saved.
+const conflictingPatterns = computed(() => {
+    const patternCategories = {};
+    for (const p of ruleProposals.value) {
+        if (!p.enabled) continue;
+        const key = p.pattern.trim().toLowerCase();
+        if (!key) continue;
+        if (!patternCategories[key]) patternCategories[key] = new Set();
+        patternCategories[key].add(p.categoryId);
+    }
+    const conflicts = new Set();
+    for (const [key, cats] of Object.entries(patternCategories)) {
+        if (cats.size > 1) conflicts.add(key);
+    }
+    return conflicts;
+});
+
+const hasConflicts = computed(() => conflictingPatterns.value.size > 0);
+
+const isConflicting = (proposal) => {
+    if (!proposal.enabled) return false;
+    return conflictingPatterns.value.has(proposal.pattern.trim().toLowerCase());
+};
+
+// Detect enabled proposals whose pattern is empty or whitespace-only.
+const isEmptyPattern = (proposal) =>
+    proposal.enabled && !proposal.pattern.trim();
+
+const hasInvalidPatterns = computed(() =>
+    ruleProposals.value.some(isEmptyPattern)
+);
 
 const submit = () => {
     form.categories = { ...categoryAssignments.value };
+    form.rules = ruleProposals.value
+        .filter(p => p.enabled)
+        .map(p => ({
+            match_pattern: p.pattern.trim(),
+            category_id: p.categoryId,
+        }));
     form.post(route('csv-imports.store'));
 };
 
@@ -365,6 +536,138 @@ const getCategoryColor = (hash) => {
 
         <div class="py-6">
             <div class="mx-auto max-w-[90rem] px-4 sm:px-6 lg:px-8">
+                <!-- ═══ RULE REVIEW STEP ═══ -->
+                <div v-if="currentStep === 'rules'">
+                    <div class="mb-4 flex items-center justify-between">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">Regels aanmaken</h3>
+                            <p class="text-sm text-gray-600">
+                                Hieronder staan de patronen die je hebt toegewezen. Vink aan welke je als
+                                regel wilt opslaan — bij de volgende import worden ze automatisch toegepast.
+                            </p>
+                        </div>
+                        <SecondaryButton type="button" @click="currentStep = 'preview'">
+                            Terug
+                        </SecondaryButton>
+                    </div>
+
+                    <p class="mb-4 text-xs text-gray-500">
+                        <kbd class="rounded bg-gray-200 px-1.5 py-0.5 font-mono">↑</kbd><kbd class="rounded bg-gray-200 px-1.5 py-0.5 font-mono">↓</kbd> navigeren,
+                        <kbd class="rounded bg-gray-200 px-1.5 py-0.5 font-mono">Enter</kbd> aan/uit + volgende,
+                        <kbd class="rounded bg-gray-200 px-1.5 py-0.5 font-mono">Spatie</kbd> aan/uit,
+                        <kbd class="rounded bg-gray-200 px-1.5 py-0.5 font-mono">Esc</kbd> terug
+                    </p>
+
+                    <div v-if="hasConflicts" class="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                        <strong>Let op:</strong> Sommige patronen zijn aan meerdere categorieën toegewezen.
+                        Per patroon kan maar één regel bestaan — vink de juiste aan en zet de andere uit,
+                        of pas het patroon aan zodat ze verschillend zijn.
+                    </div>
+
+                    <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="w-10 px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Opslaan</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Patroon</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Categorie</th>
+                                    <th class="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Transacties</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100 bg-white">
+                                <tr
+                                    v-for="(proposal, idx) in ruleProposals"
+                                    :key="idx"
+                                    :data-rule-index="idx"
+                                    :class="[
+                                        activeRuleIndex === idx ? 'ring-2 ring-inset ring-indigo-300' : '',
+                                        isConflicting(proposal) ? 'bg-amber-50' : '',
+                                        activeRuleIndex === idx && !isConflicting(proposal) ? 'bg-indigo-50' : '',
+                                    ]"
+                                    class="cursor-pointer transition-colors"
+                                    @click="activeRuleIndex = idx"
+                                >
+                                    <td class="px-3 py-2 text-center">
+                                        <input
+                                            type="checkbox"
+                                            :checked="proposal.enabled"
+                                            class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                            @change="toggleRule(idx)"
+                                            @click.stop
+                                        />
+                                    </td>
+                                    <td class="px-3 py-2">
+                                        <div class="flex items-center gap-2">
+                                            <input
+                                                type="text"
+                                                v-model="proposal.pattern"
+                                                :disabled="!proposal.enabled"
+                                                class="w-full rounded text-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                                                :class="[
+                                                    !proposal.enabled ? 'text-gray-400 line-through border-gray-300' : 'text-gray-900',
+                                                    isEmptyPattern(proposal) ? 'border-red-400' :
+                                                        (isConflicting(proposal) ? 'border-amber-400' : 'border-gray-300'),
+                                                ]"
+                                                @click.stop
+                                            />
+                                            <span
+                                                v-if="isEmptyPattern(proposal)"
+                                                class="shrink-0 inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700"
+                                                title="Patroon mag niet leeg zijn"
+                                            >
+                                                leeg
+                                            </span>
+                                            <span
+                                                v-else-if="isConflicting(proposal)"
+                                                class="shrink-0 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700"
+                                                title="Dit patroon is aan meerdere categorieën toegewezen"
+                                            >
+                                                conflict
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="whitespace-nowrap px-3 py-2 text-sm">
+                                        <div class="flex items-center gap-1.5">
+                                            <span
+                                                class="inline-block h-3 w-3 rounded-full border border-gray-200"
+                                                :style="{ backgroundColor: proposal.categoryColor }"
+                                            ></span>
+                                            <span :class="proposal.enabled ? 'text-gray-700' : 'text-gray-400'">
+                                                {{ proposal.categoryName }}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-500">
+                                        {{ proposal.matchCount }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="mt-6 flex items-center justify-between">
+                        <div class="text-sm">
+                            <p class="text-gray-500">
+                                {{ ruleProposals.filter(p => p.enabled).length }} van {{ ruleProposals.length }} regels geselecteerd
+                            </p>
+                            <p v-if="hasInvalidPatterns" class="mt-1 text-red-600">
+                                Sommige patronen zijn leeg — vul ze in of zet ze uit om door te gaan.
+                            </p>
+                        </div>
+                        <div class="flex gap-3">
+                            <SecondaryButton type="button" @click="currentStep = 'preview'">
+                                Terug
+                            </SecondaryButton>
+                            <PrimaryButton :disabled="form.processing || hasInvalidPatterns" @click="submit">
+                                Bevestig import ({{ totals.new }} nieuw)
+                            </PrimaryButton>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══ PREVIEW STEP ═══ -->
+                <div v-else>
+
                 <!-- Summary tiles -->
                 <div class="mb-4 grid grid-cols-4 gap-4">
                     <div class="rounded-md bg-green-50 p-3 text-center">
@@ -564,21 +867,23 @@ const getCategoryColor = (hash) => {
                     </div>
                 </div>
 
-                <!-- Errors -->
-                <div v-if="Object.keys(form.errors).length" class="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">
-                    <p v-for="(error, field) in form.errors" :key="field">{{ error }}</p>
-                </div>
-
                 <!-- Action buttons -->
                 <div class="mt-6 flex justify-end gap-3">
                     <Link :href="route('csv-imports.create')">
                         <SecondaryButton type="button">Annuleren</SecondaryButton>
                     </Link>
-                    <form @submit.prevent="submit">
+                    <form @submit.prevent="goToRuleReview">
                         <PrimaryButton :disabled="form.processing || !allCategorized">
                             Bevestig import ({{ totals.new }} nieuw)
                         </PrimaryButton>
                     </form>
+                </div>
+
+                </div><!-- end v-else (preview step) -->
+
+                <!-- Errors (visible in both steps) -->
+                <div v-if="Object.keys(form.errors).length" class="mt-4 rounded bg-red-50 p-3 text-sm text-red-700">
+                    <p v-for="(error, field) in form.errors" :key="field">{{ error }}</p>
                 </div>
             </div>
         </div>
