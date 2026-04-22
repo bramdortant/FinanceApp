@@ -428,6 +428,14 @@ const hasConflicts = computed(() => conflictingPatterns.value.size > 0);
 const isConflicting = (proposal) =>
     conflictingPatterns.value.has(proposal.pattern.toLowerCase());
 
+// Detect enabled proposals whose pattern is empty or whitespace-only.
+const isEmptyPattern = (proposal) =>
+    proposal.enabled && !proposal.pattern.trim();
+
+const hasInvalidPatterns = computed(() =>
+    ruleProposals.value.some(isEmptyPattern)
+);
+
 const submit = () => {
     form.categories = { ...categoryAssignments.value };
     form.rules = ruleProposals.value
@@ -573,12 +581,20 @@ const getCategoryColor = (hash) => {
                                                 class="w-full rounded text-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
                                                 :class="[
                                                     !proposal.enabled ? 'text-gray-400 line-through border-gray-300' : 'text-gray-900',
-                                                    isConflicting(proposal) && proposal.enabled ? 'border-amber-400' : 'border-gray-300',
+                                                    isEmptyPattern(proposal) ? 'border-red-400' :
+                                                        (isConflicting(proposal) && proposal.enabled ? 'border-amber-400' : 'border-gray-300'),
                                                 ]"
                                                 @click.stop
                                             />
                                             <span
-                                                v-if="isConflicting(proposal)"
+                                                v-if="isEmptyPattern(proposal)"
+                                                class="shrink-0 inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700"
+                                                title="Patroon mag niet leeg zijn"
+                                            >
+                                                leeg
+                                            </span>
+                                            <span
+                                                v-else-if="isConflicting(proposal)"
                                                 class="shrink-0 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700"
                                                 title="Dit patroon is aan meerdere categorieën toegewezen"
                                             >
@@ -606,14 +622,19 @@ const getCategoryColor = (hash) => {
                     </div>
 
                     <div class="mt-6 flex items-center justify-between">
-                        <p class="text-sm text-gray-500">
-                            {{ ruleProposals.filter(p => p.enabled).length }} van {{ ruleProposals.length }} regels geselecteerd
-                        </p>
+                        <div class="text-sm">
+                            <p class="text-gray-500">
+                                {{ ruleProposals.filter(p => p.enabled).length }} van {{ ruleProposals.length }} regels geselecteerd
+                            </p>
+                            <p v-if="hasInvalidPatterns" class="mt-1 text-red-600">
+                                Sommige patronen zijn leeg — vul ze in of zet ze uit om door te gaan.
+                            </p>
+                        </div>
                         <div class="flex gap-3">
                             <SecondaryButton type="button" @click="currentStep = 'preview'">
                                 Terug
                             </SecondaryButton>
-                            <PrimaryButton :disabled="form.processing" @click="submit">
+                            <PrimaryButton :disabled="form.processing || hasInvalidPatterns" @click="submit">
                                 Bevestig import ({{ totals.new }} nieuw)
                             </PrimaryButton>
                         </div>
