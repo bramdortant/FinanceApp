@@ -248,9 +248,9 @@ class CsvImportController extends Controller
 
             DB::transaction(function () use ($grouped, $originalFilename, $categoryMap, $rules, &$totalNew, &$totalSkipped, &$firstAccountId) {
                 foreach ($rules as $ruleData) {
-                    CategoryRule::updateOrCreate(
-                        ['match_pattern' => $ruleData['match_pattern']],
-                        ['category_id' => $ruleData['category_id']],
+                    CategoryRule::upsertByPattern(
+                        $ruleData['match_pattern'],
+                        $ruleData['category_id'],
                     );
                 }
 
