@@ -205,8 +205,16 @@ const onRowClick = (row, event) => {
 const handleKeydown = (e) => {
     // ── Rules step keyboard handling ────────────────────────────
     if (currentStep.value === 'rules') {
-        // Don't capture keys when typing in pattern inputs.
-        if (document.activeElement?.tagName === 'INPUT') return;
+        // While typing in a pattern input, most shortcuts must pass through
+        // to the input (arrow keys move the cursor, space inserts a space).
+        // Escape is the exception — blur the input and exit to preview.
+        if (document.activeElement?.tagName === 'INPUT') {
+            if (e.key === 'Escape') {
+                document.activeElement.blur();
+                currentStep.value = 'preview';
+            }
+            return;
+        }
 
         if (e.key === 'ArrowDown') {
             e.preventDefault();
@@ -367,6 +375,13 @@ const activeRuleIndex = ref(0);
 const goToRuleReview = () => {
     const groups = {};
 
+    // Index prior proposals by originalPattern + categoryId — these keys are
+    // derived from row data and stay stable even if the user edited the
+    // displayed pattern. Lets us carry over enabled/pattern across round-trips.
+    const prior = new Map(
+        ruleProposals.value.map(p => [`${p.originalPattern}|||${p.categoryId}`, p])
+    );
+
     for (const row of importableRows.value) {
         if (row.matched_rule_id) continue;
         if (row.status === 'transfer' || row.status === 'duplicate' || row.status === 'transfer_mirror') continue;
@@ -380,13 +395,15 @@ const goToRuleReview = () => {
         const key = `${pattern}|||${catId}`;
         if (!groups[key]) {
             const cat = props.categories.find(c => c.id === catId);
+            const prev = prior.get(key);
             groups[key] = {
-                pattern,
+                originalPattern: pattern,
+                pattern: prev?.pattern ?? pattern,
                 categoryId: catId,
                 categoryName: cat?.name ?? '?',
                 categoryColor: cat?.color ?? '#6B7280',
                 matchCount: 0,
-                enabled: true,
+                enabled: prev?.enabled ?? true,
             };
         }
         groups[key].matchCount++;
