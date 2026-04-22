@@ -863,6 +863,34 @@ code after this point.
 Add `database/backups/` to `.gitignore` so backup files don't bloat
 the repository.
 
+#### Prerequisite: schema hardening (DB-level integrity constraints)
+
+Before real data lands, do a schema audit. Most validation today lives
+in Laravel Form Requests and controller validators — which protects
+against user input but NOT against bugs, direct SQL, or future code
+paths that skip the validator. SQLite's `ALTER TABLE` is limited, so
+adding constraints gets painful once a table has real rows. This is
+the last easy window.
+
+Candidates to push down to the DB layer:
+
+- `category_rules.match_pattern`: `CHECK (LENGTH(TRIM(match_pattern)) > 0)`
+  — mirrors the app's `regex:/\S/` rule at the DB layer
+- `category_rules`: expression unique index on `LOWER(match_pattern)` —
+  enforces case-insensitive uniqueness at the DB layer (today only
+  guarded by `CategoryRule::upsertByPattern`; any future write path
+  that skips the helper could still insert duplicates)
+- `NOT NULL` audit across all tables — any column the app never writes
+  null to should probably have `NOT NULL` at the DB layer too. The
+  known gap: `transactions.category_id` is nullable because Phase 5
+  couldn't alter the column in SQLite. Revisit during this audit.
+- Foreign key `ON DELETE` behavior audit — decide CASCADE vs SET NULL
+  vs RESTRICT per relationship. Today most are defaults.
+
+Each constraint needs a migration and will require a table-rewrite on
+SQLite. Do them as a batch here (one migration per table), verified on
+a seeded test DB, then committed before the first Monefy import.
+
 #### Prerequisite: finalize default categories
 
 After reviewing the Monefy category mapping (Step 1 below), decide on
