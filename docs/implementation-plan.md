@@ -984,6 +984,19 @@ Work through the history one period at a time (month, quarter, or year
 3. **Resolve** each difference and mark the period as done
 4. Move to the next period
 
+#### Mind the leaks
+
+- The reconciliation comparison view will reuse `TransactionList.vue`
+  for the Monefy column. Those rows are **reference data, not editable
+  transactions** — render them with `:read-only="true"` (the prop
+  added in Phase 6 for "Alle rekeningen") so edit/split affordances
+  don't leak through. Without it, the user could mutate the very data
+  they're reconciling against.
+- After a period is marked done in Step 2, **lock its rows** in the UI
+  (hide or disable the "Resolve" actions). Re-running reconciliation
+  on a finished period could silently overwrite already-resolved
+  categories/splits — an `reconciled_at` flag is the simplest gate.
+
 #### Step 3: Cleanup
 
 Once all periods are reconciled, the Monefy reference data and the
@@ -1013,6 +1026,19 @@ This enables smart paint mode behavior in the CSV import sidebar:
 
 Clicking a row manually always allows override regardless of
 confidence — that's an explicit user action.
+
+#### Mind the leaks
+
+- The paint-mode handler must receive `category_source`,
+  `category_confidence`, and `is_transfer` per row and short-circuit
+  on those flags **before** applying the brush. Selection alone is
+  not enough — relying on it would silently overwrite manual choices
+  and transfer categories during a drag-paint. Direct row clicks
+  remain the only override path for protected rows.
+- Suggestion-card components must derive auto-apply vs review vs
+  manual from each row's certainty band, not from a parent-chosen
+  flag. Never let the parent component bulk-apply a suggestion below
+  the auto-assign threshold (currently 85%).
 
 #### AI features
 
@@ -1234,6 +1260,7 @@ grouped — prioritize during the Phase 11 investigation):
 - Pattern display redesign on Category Rules index (Phase 5b)
 - Cross-source duplicate detection — manual ↔ CSV (Phase 5b)
 - Map IBAN to existing account on missing-accounts page (Phase 4a)
+- Inbound-transfer click UX on the destination account (Phase 6)
 
 *Refactors / architectural decisions:*
 - Reusable `<CategoryPicker>` component (Phase 5b)
@@ -1297,6 +1324,21 @@ The detailed descriptions for each follow:
   create/edit forms, and updates anywhere a category is rendered (transaction
   list, quick-add modal, categories index). Decide during the investigation
   whether this is worth the scope.
+- **Nice-to-have from Phase 6**: improve the inbound-transfer click UX
+  on the destination account's page. Today, clicking an inbound
+  transfer (where the current account is the destination) navigates
+  the user to the source account via `router.visit()` without opening
+  any modal — they have to find and click the transfer again on the
+  source page to edit it. The redirect exists for a real reason
+  (`Show.vue` comment: editing from the destination's perspective
+  would render the wrong "Van" and exclude the saved destination from
+  the dropdown), but the current UX is jarring for an account that
+  only ever receives transfers (every click teleports them away).
+  Options to evaluate: auto-open the modal after navigation via a
+  `?edit=<tx_id>` query param, add a read-only "view details"
+  variant of the transfer modal that works from either side, or at
+  minimum a small visual hint on inbound-transfer rows that clicking
+  will navigate elsewhere.
 - **Nice-to-have from Phase 5b**: rethink pattern display on the Category
   Rules index page. The current layout (pattern shown inline as `<code>`)
   feels underwhelming — hard to scan, doesn't stand out. Consider a card
@@ -1351,6 +1393,15 @@ counterparty information) so the bar is higher than a typical hobby
 project. This phase is **research + verification + fixes**, not new
 features. The output is a security audit report saved in `docs/` plus
 all fixes applied.
+
+#### Mind the leaks
+
+- **Disable public registration before any production deploy**, even
+  if Phase 12 hasn't fully started yet. Breeze ships `/register`
+  enabled by default. Leaving it live on a single-user app exposes
+  an account-creation surface to the entire internet — any drive-by
+  crawler can register. The full removal step is in OWASP A07 below;
+  do not wait until the audit phase to apply it.
 
 #### Dependency vulnerability scan
 

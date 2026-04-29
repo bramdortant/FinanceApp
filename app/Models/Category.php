@@ -23,6 +23,11 @@ class Category extends Model
         return $this->hasMany(Transaction::class);
     }
 
+    public function splits(): HasMany
+    {
+        return $this->hasMany(TransactionSplit::class);
+    }
+
     public function rules(): HasMany
     {
         return $this->hasMany(CategoryRule::class);

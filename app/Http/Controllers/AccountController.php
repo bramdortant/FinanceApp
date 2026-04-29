@@ -37,7 +37,13 @@ class AccountController extends Controller
         $totalBalance = array_reduce($balances, fn ($carry, $bal) => bcadd($carry, $bal, 2), '0');
 
         $transactions = Transaction::query()
-            ->with(['category:id,name,color', 'account:id,name', 'transferToAccount:id,name'])
+            ->with([
+                'category:id,name,color',
+                'account:id,name',
+                'transferToAccount:id,name',
+                'splits:id,transaction_id,category_id,amount',
+                'splits.category:id,name,color',
+            ])
             ->orderByDesc('date')
             ->orderByDesc('id')
             ->limit(500)
@@ -59,7 +65,13 @@ class AccountController extends Controller
                 $query->where('account_id', $account->id)
                     ->orWhere('transfer_to_account_id', $account->id);
             })
-            ->with(['category:id,name,color', 'transferToAccount:id,name', 'account:id,name'])
+            ->with([
+                'category:id,name,color',
+                'transferToAccount:id,name',
+                'account:id,name',
+                'splits:id,transaction_id,category_id,amount',
+                'splits.category:id,name,color',
+            ])
             ->orderByDesc('date')
             ->orderByDesc('id')
             ->get()

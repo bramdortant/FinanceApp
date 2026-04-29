@@ -35,7 +35,7 @@ const formatCurrency = (amount) =>
         <div class="py-6">
             <div class="mx-auto max-w-4xl sm:px-6 lg:px-8">
                 <div class="overflow-hidden bg-white shadow-sm sm:rounded-lg">
-                    <TransactionList :transactions="transactions" :show-account="true" />
+                    <TransactionList :transactions="transactions" :show-account="true" :read-only="true" />
                 </div>
             </div>
         </div>

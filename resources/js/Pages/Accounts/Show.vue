@@ -6,6 +6,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import Modal from '@/Components/Modal.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
+import SplitTransactionModal from '@/Components/SplitTransactionModal.vue';
 import TextInput from '@/Components/TextInput.vue';
 import TransactionList from '@/Components/TransactionList.vue';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3';
@@ -88,6 +89,23 @@ const closeQuick = () => {
     quickModalOpen.value = false;
     editingTransaction.value = null;
     form.reset();
+};
+
+// ----- Split modal -----
+const splitModalOpen = ref(false);
+const splittingTransaction = ref(null);
+
+const openSplit = (tx) => {
+    if (tx.type === 'transfer') return; // backend rejects too, but hide it here
+    // Close the edit modal if it's open — splitting is a separate flow.
+    if (quickModalOpen.value) closeQuick();
+    splittingTransaction.value = tx;
+    splitModalOpen.value = true;
+};
+
+const closeSplit = () => {
+    splitModalOpen.value = false;
+    splittingTransaction.value = null;
 };
 
 const handleEditTransaction = (tx) => {
@@ -269,6 +287,7 @@ watch(quickModalOpen, (open) => {
                         :transactions="transactions"
                         :current-account-id="account.id"
                         @edit="handleEditTransaction"
+                        @split="openSplit"
                     />
                 </div>
             </div>
@@ -331,6 +350,13 @@ watch(quickModalOpen, (open) => {
                     <DangerButton v-if="editingTransaction" type="button" @click="deleteEditing">Verwijderen</DangerButton>
                     <span v-else></span>
                     <div class="flex gap-3">
+                        <SecondaryButton
+                            v-if="editingTransaction"
+                            type="button"
+                            @click="openSplit(editingTransaction)"
+                        >
+                            Splitsen…
+                        </SecondaryButton>
                         <SecondaryButton type="button" @click="closeQuick">Annuleren</SecondaryButton>
                         <PrimaryButton :disabled="form.processing">Opslaan</PrimaryButton>
                     </div>
@@ -437,5 +463,13 @@ watch(quickModalOpen, (open) => {
                 </div>
             </div>
         </Modal>
+
+        <!-- Split modal -->
+        <SplitTransactionModal
+            :show="splitModalOpen"
+            :transaction="splittingTransaction"
+            :categories="categories"
+            @close="closeSplit"
+        />
     </AuthenticatedLayout>
 </template>

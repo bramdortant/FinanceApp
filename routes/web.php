@@ -6,6 +6,7 @@ use App\Http\Controllers\CategoryRuleController;
 use App\Http\Controllers\CsvImportController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\TransactionController;
+use App\Http\Controllers\TransactionSplitController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -37,6 +38,9 @@ Route::middleware('auth')->group(function () {
     Route::post('accounts/{account}/transactions', [TransactionController::class, 'store'])->name('transactions.store');
     Route::put('transactions/{transaction}', [TransactionController::class, 'update'])->name('transactions.update');
     Route::delete('transactions/{transaction}', [TransactionController::class, 'destroy'])->name('transactions.destroy');
+
+    Route::put('transactions/{transaction}/splits', [TransactionSplitController::class, 'update'])->name('transactions.splits.update');
+    Route::delete('transactions/{transaction}/splits', [TransactionSplitController::class, 'destroy'])->name('transactions.splits.destroy');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
