@@ -984,6 +984,19 @@ Work through the history one period at a time (month, quarter, or year
 3. **Resolve** each difference and mark the period as done
 4. Move to the next period
 
+#### Mind the leaks
+
+- The reconciliation comparison view will reuse `TransactionList.vue`
+  for the Monefy column. Those rows are **reference data, not editable
+  transactions** — render them with `:read-only="true"` (the prop
+  added in Phase 6 for "Alle rekeningen") so edit/split affordances
+  don't leak through. Without it, the user could mutate the very data
+  they're reconciling against.
+- After a period is marked done in Step 2, **lock its rows** in the UI
+  (hide or disable the "Resolve" actions). Re-running reconciliation
+  on a finished period could silently overwrite already-resolved
+  categories/splits — an `reconciled_at` flag is the simplest gate.
+
 #### Step 3: Cleanup
 
 Once all periods are reconciled, the Monefy reference data and the
@@ -1013,6 +1026,19 @@ This enables smart paint mode behavior in the CSV import sidebar:
 
 Clicking a row manually always allows override regardless of
 confidence — that's an explicit user action.
+
+#### Mind the leaks
+
+- The paint-mode handler must receive `category_source`,
+  `category_confidence`, and `is_transfer` per row and short-circuit
+  on those flags **before** applying the brush. Selection alone is
+  not enough — relying on it would silently overwrite manual choices
+  and transfer categories during a drag-paint. Direct row clicks
+  remain the only override path for protected rows.
+- Suggestion-card components must derive auto-apply vs review vs
+  manual from each row's certainty band, not from a parent-chosen
+  flag. Never let the parent component bulk-apply a suggestion below
+  the auto-assign threshold (currently 85%).
 
 #### AI features
 
@@ -1351,6 +1377,15 @@ counterparty information) so the bar is higher than a typical hobby
 project. This phase is **research + verification + fixes**, not new
 features. The output is a security audit report saved in `docs/` plus
 all fixes applied.
+
+#### Mind the leaks
+
+- **Disable public registration before any production deploy**, even
+  if Phase 12 hasn't fully started yet. Breeze ships `/register`
+  enabled by default. Leaving it live on a single-user app exposes
+  an account-creation surface to the entire internet — any drive-by
+  crawler can register. The full removal step is in OWASP A07 below;
+  do not wait until the audit phase to apply it.
 
 #### Dependency vulnerability scan
 
