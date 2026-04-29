@@ -40,6 +40,19 @@ class TransactionSplitRequest extends FormRequest
 
             $splits = $this->input('splits', []);
 
+            // The base rules ('splits' => required|array|min:2, plus per-row
+            // rules) may already have failed; Laravel still runs after-hooks
+            // anyway. Bail out before treating $splits as an array of arrays
+            // so a malformed payload turns into a clean 422 instead of a 500.
+            if (! is_array($splits)) {
+                return;
+            }
+            foreach ($splits as $split) {
+                if (! is_array($split)) {
+                    return;
+                }
+            }
+
             // Sum of split amounts must equal the transaction's absolute amount.
             $sum = array_sum(array_map(
                 fn ($s) => (float) ($s['amount'] ?? 0),

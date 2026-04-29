@@ -28,9 +28,13 @@ const total = computed(() => {
 });
 
 // Filter categories by transaction type so users can only pick valid ones.
+// System categories are also rejected by TransactionSplitRequest, so exclude
+// them here too — don't rely on the controller-side filter alone.
 const availableCategories = computed(() => {
     if (!props.transaction) return [];
-    return props.categories.filter((c) => c.type === props.transaction.type);
+    return props.categories.filter(
+        (c) => c.type === props.transaction.type && !c.is_system,
+    );
 });
 
 const sum = computed(() =>

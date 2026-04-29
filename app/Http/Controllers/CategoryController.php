@@ -61,11 +61,12 @@ class CategoryController extends Controller
             return Redirect::route('categories.index')
                 ->with('error', 'Systeemcategorieën kunnen niet worden bewerkt.');
         }
-        // Prevent changing income/expense type when transactions already exist —
-        // it would leave them with a category whose type no longer matches.
+        // Prevent changing income/expense type when transactions or splits
+        // already reference this category — it would leave them with a
+        // category whose type no longer matches the parent transaction's type.
         if (
             $category->type !== $request->validated('type')
-            && $category->transactions()->exists()
+            && ($category->transactions()->exists() || $category->splits()->exists())
         ) {
             return Redirect::back()
                 ->withErrors(['type' => 'Kan het type niet wijzigen zolang er transacties aan deze categorie gekoppeld zijn.']);
