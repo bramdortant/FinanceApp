@@ -14,9 +14,16 @@ class CategoryController extends Controller
     public function index(): Response
     {
         $categories = Category::where('is_system', false)
-            ->withCount('transactions')
+            ->withCount(['transactions', 'splits'])
             ->orderBy('name')
             ->get();
+
+        // Combine direct transaction count with split usages so the index
+        // reflects total usage and the delete button is disabled correctly.
+        $categories->each(function (Category $category) {
+            $category->transactions_count += $category->splits_count;
+            unset($category->splits_count);
+        });
 
         return Inertia::render('Categories/Index', [
             'categories' => $categories,
@@ -77,7 +84,7 @@ class CategoryController extends Controller
                 ->with('error', 'Systeemcategorieën kunnen niet worden verwijderd.');
         }
 
-        if ($category->transactions()->exists()) {
+        if ($category->transactions()->exists() || $category->splits()->exists()) {
             return Redirect::route('categories.index')
                 ->with('error', 'Kan een categorie met transacties niet verwijderen.');
         }
