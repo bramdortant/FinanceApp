@@ -120,6 +120,7 @@ const grouped = computed(() => {
                         v-if="!readOnly && tx.type !== 'transfer'"
                         type="button"
                         class="flex-shrink-0 px-2 py-1 text-gray-300 opacity-0 transition hover:text-indigo-600 group-hover:opacity-100"
+                        :aria-label="tx.splits?.length ? 'Splits bewerken' : 'Transactie splitsen'"
                         :title="tx.splits?.length ? 'Bewerk splits' : 'Splitsen'"
                         @click.stop="$emit('split', tx)"
                     >

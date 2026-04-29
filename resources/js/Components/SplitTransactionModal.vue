@@ -189,6 +189,7 @@ const hasExistingSplits = computed(() =>
                         <select
                             :id="`split-cat-${idx}`"
                             v-model="split.category_id"
+                            :aria-label="`Categorie voor split ${idx + 1}`"
                             class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                             required
                         >
@@ -204,6 +205,7 @@ const hasExistingSplits = computed(() =>
                         <TextInput
                             :id="`split-amt-${idx}`"
                             v-model="split.amount"
+                            :aria-label="`Bedrag voor split ${idx + 1}`"
                             type="number"
                             step="0.01"
                             min="0.01"
