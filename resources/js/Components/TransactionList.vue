@@ -16,6 +16,12 @@ const props = defineProps({
         type: Number,
         default: null,
     },
+    // Hide all interactive affordances (edit click, split icon). Used on the
+    // "Alle rekeningen" overview, which is read-only by design.
+    readOnly: {
+        type: Boolean,
+        default: false,
+    },
     emptyMessage: {
         type: String,
         default: 'Nog geen transacties.',
@@ -68,11 +74,15 @@ const grouped = computed(() => {
                 {{ formatDate(date) }}
             </div>
             <div v-for="tx in items" :key="tx.id">
-                <div class="group relative flex w-full items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50">
-                    <button
-                        type="button"
+                <div
+                    class="group relative flex w-full items-center justify-between gap-3 px-4 py-3"
+                    :class="{ 'hover:bg-gray-50': !readOnly }"
+                >
+                    <component
+                        :is="readOnly ? 'div' : 'button'"
+                        :type="readOnly ? null : 'button'"
                         class="flex min-w-0 flex-1 items-center gap-3 text-left"
-                        @click="$emit('edit', tx)"
+                        @click="readOnly ? null : $emit('edit', tx)"
                     >
                         <span
                             class="inline-block h-3 w-3 flex-shrink-0 rounded-full"
@@ -104,10 +114,10 @@ const grouped = computed(() => {
                                 <span v-if="showAccount && tx.account"> · {{ tx.account.name }}</span>
                             </div>
                         </div>
-                    </button>
-                    <!-- Split icon: only for non-transfer rows. Subtle until hovered. -->
+                    </component>
+                    <!-- Split icon: only for non-transfer rows in editable mode. Subtle until hovered. -->
                     <button
-                        v-if="tx.type !== 'transfer'"
+                        v-if="!readOnly && tx.type !== 'transfer'"
                         type="button"
                         class="flex-shrink-0 px-2 py-1 text-gray-300 opacity-0 transition hover:text-indigo-600 group-hover:opacity-100"
                         :title="tx.splits?.length ? 'Bewerk splits' : 'Splitsen'"
@@ -115,26 +125,29 @@ const grouped = computed(() => {
                     >
                         ✂
                     </button>
-                    <button
-                        type="button"
+                    <component
+                        :is="readOnly ? 'span' : 'button'"
+                        :type="readOnly ? null : 'button'"
                         class="flex-shrink-0 text-sm font-semibold"
                         :class="parseFloat(tx.display_amount ?? tx.amount) >= 0 ? 'text-green-600' : 'text-red-600'"
-                        @click="$emit('edit', tx)"
+                        @click="readOnly ? null : $emit('edit', tx)"
                     >
                         {{ formatCurrency(tx.display_amount ?? tx.amount) }}
-                    </button>
+                    </component>
                 </div>
                 <!-- Always-expanded split rows (indented + muted under parent) -->
                 <div
                     v-if="tx.splits?.length"
                     class="border-l-2 border-indigo-100 bg-gray-50/50"
                 >
-                    <button
+                    <component
+                        :is="readOnly ? 'div' : 'button'"
                         v-for="split in tx.splits"
                         :key="split.id"
-                        type="button"
-                        class="flex w-full items-center justify-between gap-3 py-1.5 pl-12 pr-4 text-left text-xs hover:bg-gray-100"
-                        @click="$emit('split', tx)"
+                        :type="readOnly ? null : 'button'"
+                        class="flex w-full items-center justify-between gap-3 py-1.5 pl-12 pr-4 text-left text-xs"
+                        :class="{ 'hover:bg-gray-100': !readOnly }"
+                        @click="readOnly ? null : $emit('split', tx)"
                     >
                         <div class="flex min-w-0 items-center gap-2">
                             <span
@@ -144,7 +157,7 @@ const grouped = computed(() => {
                             <span class="truncate text-gray-600">{{ split.category?.name || 'Onbekend' }}</span>
                         </div>
                         <span class="flex-shrink-0 text-gray-600">{{ formatCurrency(split.amount) }}</span>
-                    </button>
+                    </component>
                 </div>
             </div>
         </div>
