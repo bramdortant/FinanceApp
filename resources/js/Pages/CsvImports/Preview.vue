@@ -577,7 +577,7 @@ const getCategoryColor = (hash) => {
                             <tbody class="divide-y divide-gray-100 bg-white">
                                 <tr
                                     v-for="(proposal, idx) in ruleProposals"
-                                    :key="idx"
+                                    :key="`${proposal.originalPattern}|||${proposal.categoryId}`"
                                     :data-rule-index="idx"
                                     :class="[
                                         activeRuleIndex === idx ? 'ring-2 ring-inset ring-indigo-300' : '',
@@ -744,7 +744,7 @@ const getCategoryColor = (hash) => {
                                 <tr
                                     v-else
                                     v-for="(row, idx) in sections[activeTab].rows"
-                                    :key="idx"
+                                    :key="row.hash"
                                     :data-hash="row.hash"
                                     :class="[
                                         (row.status === 'duplicate' || row.status === 'transfer_mirror') ? 'opacity-50' : '',

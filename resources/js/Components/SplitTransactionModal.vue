@@ -56,6 +56,16 @@ const canSubmit = computed(() =>
     !form.processing
 );
 
+// Stable client-side identifier so :key on the v-for survives row removals.
+// Index keys would let Vue reuse <select>/<TextInput> instances at the same
+// position when splits are spliced, leaking transient state to the wrong row.
+const newRow = (overrides = {}) => ({
+    rowId: crypto.randomUUID(),
+    category_id: null,
+    amount: '',
+    ...overrides,
+});
+
 // Whenever the modal opens for a (different) transaction, reset the form
 // from existing splits if any, otherwise start with two empty rows.
 watch(
@@ -65,14 +75,14 @@ watch(
         form.clearErrors();
         const existing = props.transaction.splits || [];
         if (existing.length > 0) {
-            form.splits = existing.map((s) => ({
+            form.splits = existing.map((s) => newRow({
                 category_id: s.category_id,
                 amount: parseFloat(s.amount).toFixed(2),
             }));
         } else {
             form.splits = [
-                { category_id: props.transaction.category_id ?? null, amount: '' },
-                { category_id: null, amount: '' },
+                newRow({ category_id: props.transaction.category_id ?? null }),
+                newRow(),
             ];
         }
     },
@@ -80,7 +90,7 @@ watch(
 );
 
 const addRow = () => {
-    form.splits.push({ category_id: null, amount: '' });
+    form.splits.push(newRow());
 };
 
 const removeRow = (index) => {
@@ -171,7 +181,7 @@ const hasExistingSplits = computed(() =>
             <div class="mt-4 space-y-2">
                 <div
                     v-for="(split, idx) in form.splits"
-                    :key="idx"
+                    :key="split.rowId"
                     class="grid grid-cols-[1fr_8rem_auto] items-end gap-2"
                 >
                     <div>
