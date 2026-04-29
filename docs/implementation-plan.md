@@ -1260,6 +1260,7 @@ grouped — prioritize during the Phase 11 investigation):
 - Pattern display redesign on Category Rules index (Phase 5b)
 - Cross-source duplicate detection — manual ↔ CSV (Phase 5b)
 - Map IBAN to existing account on missing-accounts page (Phase 4a)
+- Inbound-transfer click UX on the destination account (Phase 6)
 
 *Refactors / architectural decisions:*
 - Reusable `<CategoryPicker>` component (Phase 5b)
@@ -1323,6 +1324,21 @@ The detailed descriptions for each follow:
   create/edit forms, and updates anywhere a category is rendered (transaction
   list, quick-add modal, categories index). Decide during the investigation
   whether this is worth the scope.
+- **Nice-to-have from Phase 6**: improve the inbound-transfer click UX
+  on the destination account's page. Today, clicking an inbound
+  transfer (where the current account is the destination) navigates
+  the user to the source account via `router.visit()` without opening
+  any modal — they have to find and click the transfer again on the
+  source page to edit it. The redirect exists for a real reason
+  (`Show.vue` comment: editing from the destination's perspective
+  would render the wrong "Van" and exclude the saved destination from
+  the dropdown), but the current UX is jarring for an account that
+  only ever receives transfers (every click teleports them away).
+  Options to evaluate: auto-open the modal after navigation via a
+  `?edit=<tx_id>` query param, add a read-only "view details"
+  variant of the transfer modal that works from either side, or at
+  minimum a small visual hint on inbound-transfer rows that clicking
+  will navigate elsewhere.
 - **Nice-to-have from Phase 5b**: rethink pattern display on the Category
   Rules index page. The current layout (pattern shown inline as `<code>`)
   feels underwhelming — hard to scan, doesn't stand out. Consider a card
